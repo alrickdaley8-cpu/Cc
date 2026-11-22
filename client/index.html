@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0a1019" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>WILDREACH — 3D Multiplayer Survival</title>
+  </head>
+  <body>
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Floating 3D-projected damage/gather popups -->
+    <div id="floating-text-layer"></div>
+
+    <!-- Screen-edge immersive vignette (low HP, hit flash, chilled frost, underwater, campfire warmth) -->
+    <div id="screen-vignette"></div>
+
+    <!-- Live-3D Atmospheric Title & Lobby Overlay -->
+    <div id="title-overlay">
+      <div class="title-card">
+        <div class="title-top-row">
+          <div class="brand-kicker">REAL-TIME 3D MULTIPLAYER SURVIVAL</div>
+          <span id="lobby-mode-badge" class="mode-badge">Checking server...</span>
+        </div>
+        <h1 class="brand-title">WILDREACH</h1>
+        <p class="brand-sub">
+          Carve a shelter from a living procedural archipelago. Forage, hunt, forge iron,
+          and endure the Shadow Stalkers — on desktop, tablet, or mobile.
+        </p>
+
+        <div class="lobby-grid">
+          <div class="lobby-col">
+            <label class="field-label">Survivor Callsign</label>
+            <input id="inp-name" class="text-input" maxlength="18" placeholder="Enter your name..." />
+
+            <label class="field-label">Outfit & Role</label>
+            <div class="outfit-row">
+              <button class="outfit-pill active" data-outfit="ranger">Ranger</button>
+              <button class="outfit-pill" data-outfit="nomad">Nomad</button>
+              <button class="outfit-pill" data-outfit="warden">Warden</button>
+              <button class="outfit-pill" data-outfit="alchemist">Alchemist</button>
+              <button class="outfit-pill" data-outfit="mariner">Mariner</button>
+            </div>
+
+            <div class="dual-fields">
+              <div>
+                <label class="field-label">World / Room ID</label>
+                <input id="inp-room" class="text-input" value="emerald-archipelago" placeholder="room-name" />
+              </div>
+              <div>
+                <label class="field-label">Custom Seed</label>
+                <input id="inp-seed" class="text-input" placeholder="e.g. 42077" />
+              </div>
+            </div>
+
+            <label class="field-label">Multiplayer Server URL (optional — blank = auto/local)</label>
+            <input
+              id="inp-server"
+              class="text-input"
+              placeholder="Auto (leave empty for current host or GitHub Pages local play)"
+            />
+
+            <label class="check-row">
+              <input id="chk-ai" type="checkbox" checked />
+              <span>Include an [AI] Camp Companion (gathers & defends camp)</span>
+            </label>
+
+            <div class="lobby-cta-row">
+              <button id="btn-enter-world" class="btn-enter">ENTER WILDREACH</button>
+              <button id="btn-copy-invite" class="btn-ghost btn-invite" type="button" title="Copy shareable invite link">
+                🔗 Invite
+              </button>
+            </div>
+          </div>
+
+          <div class="lobby-col">
+            <label class="field-label">Live Multiplayer Worlds</label>
+            <div id="room-list" class="room-list">
+              <div class="room-empty">Scanning island realms...</div>
+            </div>
+            <div class="lobby-tip">
+              <strong>Cross-Platform & GitHub Ready:</strong> Play instantly anywhere (desktop WASD+Mouse
+              or mobile Dual-Thumb Touch). Share your invite link with friends on the same Room ID to
+              build, share chests, and survive together!
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- In-Game Minimalist Survival HUD -->
+    <div id="hud-root" class="hidden">
+      <!-- Top Status Ribbon -->
+      <div class="hud-top">
+        <div class="hud-chip" id="hud-clock">☀ Day 1 • 08:00 • CLEAR</div>
+        <div class="hud-chip hud-compass" id="hud-compass">N 000° • Emerald Meadows</div>
+        <div class="hud-chip" id="hud-net">1 Online • 12ms • Lv.1</div>
+      </div>
+
+      <!-- Top-Right Circular Minimap (clickable/tappable!) -->
+      <button class="minimap-wrap" id="btn-minimap-open" type="button" title="Open Full Island Map [M]">
+        <canvas id="minimap-canvas" width="164" height="164"></canvas>
+        <div class="minimap-badge">M · MAP</div>
+      </button>
+
+      <!-- Top-Left Collapsible Guided Objectives -->
+      <div class="objectives-wrap">
+        <button id="btn-toggle-obj" class="obj-toggle-pill" type="button">✦ LOG</button>
+        <div id="objectives-card" class="objectives-card">
+          <div class="obj-header">
+            <span>SURVIVAL LOG</span>
+            <button id="btn-hide-obj" class="obj-close" type="button">−</button>
+          </div>
+          <div id="objectives-list"></div>
+        </div>
+      </div>
+
+      <!-- Responsive Quick-Access Action Toolbar (Tap/Click friendly!) -->
+      <div class="quick-bar">
+        <button id="qbtn-pack" class="qbtn" type="button" title="Inventory [Tab]">🎒<span>Pack</span></button>
+        <button id="qbtn-craft" class="qbtn" type="button" title="Crafting [C]">⚒<span>Craft</span></button>
+        <button id="qbtn-build" class="qbtn" type="button" title="Build [B]">🏗<span>Build</span></button>
+        <button id="qbtn-cam" class="qbtn" type="button" title="Camera [V]">👁<span>Cam</span></button>
+        <button id="qbtn-map" class="qbtn" type="button" title="Map [M]">🗺<span>Map</span></button>
+        <button id="qbtn-chat" class="qbtn" type="button" title="Chat [Enter]">💬<span>Chat</span></button>
+        <button id="qbtn-menu" class="qbtn" type="button" title="Menu [Esc]">⚙<span>Menu</span></button>
+      </div>
+
+      <!-- Center Crosshair + Interaction Prompt + Bow Charge -->
+      <div class="crosshair-wrap">
+        <div class="crosshair-dot"></div>
+        <div id="bow-charge-bar" class="bow-bar hidden">
+          <div id="bow-charge-fill"></div>
+        </div>
+        <div id="interact-prompt" class="interact-prompt hidden"></div>
+      </div>
+
+      <!-- Click-to-Resume Pointer Lock Hint (Desktop only) -->
+      <div id="lock-hint" class="lock-hint hidden">
+        Click to lock camera (or Right-Drag) • <strong>[Tab]</strong> Pack • <strong>[C]</strong> Craft • <strong>[B]</strong> Build • <strong>[Esc]</strong> Menu
+      </div>
+
+      <!-- Left-Mid Multiplayer Chat -->
+      <div class="chat-panel">
+        <div id="chat-log" class="chat-log"></div>
+        <div id="chat-input-wrap" class="chat-input-wrap hidden">
+          <input id="chat-input" type="text" maxlength="180" placeholder="Say something... (or /time day, /time dusk, /weather rain)" />
+        </div>
+      </div>
+
+      <!-- Bottom-Left Vitals & Buffs -->
+      <div class="vitals-panel">
+        <div id="status-pills" class="status-pills"></div>
+        <div class="vital-row">
+          <span class="vital-lbl">HP</span>
+          <div class="vital-track"><div id="bar-hp" class="vital-fill fill-hp" style="width:100%"></div></div>
+          <span id="bar-hp-val" class="vital-num">100/100</span>
+        </div>
+        <div class="vital-row">
+          <span class="vital-lbl">STM</span>
+          <div class="vital-track"><div id="bar-stamina" class="vital-fill fill-stamina" style="width:100%"></div></div>
+        </div>
+        <div class="vital-mini-grid">
+          <div class="vital-row">
+            <span class="vital-lbl">FOD</span>
+            <div class="vital-track"><div id="bar-hunger" class="vital-fill fill-hunger" style="width:92%"></div></div>
+          </div>
+          <div class="vital-row">
+            <span class="vital-lbl">H2O</span>
+            <div class="vital-track"><div id="bar-thirst" class="vital-fill fill-thirst" style="width:92%"></div></div>
+          </div>
+          <div class="vital-row">
+            <span class="vital-lbl">TMP</span>
+            <div class="vital-track"><div id="bar-warmth" class="vital-fill fill-warmth" style="width:58%"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom-Center Hotbar -->
+      <div class="hotbar-wrap">
+        <div id="equipped-label" class="equipped-label">Stone Hatchet</div>
+        <div id="hotbar" class="hotbar"></div>
+        <div class="shortcut-strip">
+          <span>[Tab] Pack</span>
+          <span>[C] Craft</span>
+          <span>[B] Build</span>
+          <span>[V] Camera</span>
+          <span>[Q] Dodge</span>
+          <span>[Enter] Chat</span>
+          <span>[Esc] Menu</span>
+        </div>
+      </div>
+
+      <!-- Dual-Thumb Mobile & Tablet Touch Controls Layer -->
+      <div id="touch-controls" class="touch-controls hidden">
+        <!-- Left Analog Movement Joystick -->
+        <div id="touch-joy-zone" class="touch-joy-zone">
+          <div id="touch-joy-base" class="touch-joy-base">
+            <div id="touch-joy-knob" class="touch-joy-knob"></div>
+          </div>
+        </div>
+
+        <!-- Contextual Build Mode Rotate/Cancel Pills -->
+        <div id="touch-build-actions" class="touch-build-actions hidden">
+          <button id="tbtn-rotate" class="tbtn-pill" type="button">↻ Rotate</button>
+          <button id="tbtn-cancel-build" class="tbtn-pill danger" type="button">✕ Cancel</button>
+        </div>
+
+        <!-- Right Ergonomic Action Cluster -->
+        <div class="touch-action-pad">
+          <button id="tbtn-interact" class="tbtn tbtn-sm tbtn-use" type="button">USE</button>
+          <button id="tbtn-jump" class="tbtn tbtn-sm tbtn-jump" type="button">JUMP</button>
+          <button id="tbtn-dodge" class="tbtn tbtn-sm tbtn-dodge" type="button">ROLL</button>
+          <button id="tbtn-action" class="tbtn tbtn-lg tbtn-act" type="button">ACT</button>
+        </div>
+      </div>
+
+      <!-- Toast Notifications -->
+      <div id="toast-container" class="toast-container"></div>
+    </div>
+
+    <!-- Modal Panel Container (Inventory, Crafting, Build, Chest, Pause) -->
+    <div id="panel-container" class="modal-backdrop hidden"></div>
+
+    <!-- Expandable Tactical Island Map Modal -->
+    <div id="map-modal" class="modal-backdrop hidden">
+      <div class="modal-card map-card">
+        <div class="modal-header">
+          <h2>Archipelago Tactical Chart</h2>
+          <button class="btn-close" id="btn-map-close" type="button">✕</button>
+        </div>
+        <canvas id="fullmap-canvas" width="520" height="520"></canvas>
+        <div class="map-legend">
+          <span><i style="background:#ffffff"></i> You</span>
+          <span><i style="background:#4ade80"></i> Survivors</span>
+          <span><i style="background:#7dd3fc"></i> [AI] Camp Ally</span>
+          <span><i style="background:#f97316"></i> Campfire</span>
+          <span><i style="background:#2dd4bf"></i> Sanctuary</span>
+          <span><i style="background:#38bdf8"></i> Fresh Spring</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Death & Respawn Overlay -->
+    <div id="death-overlay" class="modal-backdrop hidden">
+      <div class="modal-card death-card">
+        <h2>YOU FELL IN THE WILD</h2>
+        <p>Your spirit drifts back toward the Sanctuary hearth (or your placed Camp Bedroll).</p>
+        <button id="btn-respawn" class="btn-enter">AWAKEN AT CAMP</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

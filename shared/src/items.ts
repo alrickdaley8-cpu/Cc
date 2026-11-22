@@ -1,0 +1,491 @@
+import type { StructureKind } from './types.js';
+
+export type ItemCategory =
+  | 'tool'
+  | 'weapon'
+  | 'armor'
+  | 'consumable'
+  | 'material'
+  | 'structure'
+  | 'ammo'
+  | 'light';
+
+export interface ItemDef {
+  id: string;
+  name: string;
+  category: ItemCategory;
+  description: string;
+  maxStack: number;
+  maxDurability?: number;
+  tier?: number;
+  toolKind?: 'axe' | 'pickaxe' | 'hammer';
+  gatherPower?: number;
+  damage?: number;
+  attackCooldown?: number; // seconds
+  range?: number;
+  isRanged?: boolean;
+  ammoItemId?: string;
+  armorRating?: number;
+  heal?: number;
+  hungerRestore?: number;
+  thirstRestore?: number;
+  warmthRestore?: number;
+  structureKind?: StructureKind;
+  emitsLight?: boolean;
+  accentColor: string;
+}
+
+export const ITEMS: Record<string, ItemDef> = {
+  // ---- Materials ----
+  wood: {
+    id: 'wood',
+    name: 'Timber Wood',
+    category: 'material',
+    description: 'Sturdy timber felled from island trees. Essential for tools, fire, and shelters.',
+    maxStack: 50,
+    accentColor: '#a66b3a',
+  },
+  stone: {
+    id: 'stone',
+    name: 'Rough Stone',
+    category: 'material',
+    description: 'Dense island rock chipped from boulders and cliffs.',
+    maxStack: 50,
+    accentColor: '#8d959e',
+  },
+  flint: {
+    id: 'flint',
+    name: 'Sharp Flint',
+    category: 'material',
+    description: 'Razor-edged mineral ideal for arrowheads and early blades.',
+    maxStack: 40,
+    accentColor: '#5c6670',
+  },
+  fiber: {
+    id: 'fiber',
+    name: 'Plant Fiber',
+    category: 'material',
+    description: 'Pliable reeds and stalks woven into rope, bandages, and bindings.',
+    maxStack: 50,
+    accentColor: '#76a84c',
+  },
+  rope: {
+    id: 'rope',
+    name: 'Braided Rope',
+    category: 'material',
+    description: 'Strong woven cordage required for bows, stations, and reinforced builds.',
+    maxStack: 30,
+    accentColor: '#c7a46a',
+  },
+  resin: {
+    id: 'resin',
+    name: 'Amber Resin',
+    category: 'material',
+    description: 'Flammable tree sap used for torches, waterproofing, and lanterns.',
+    maxStack: 40,
+    accentColor: '#e2942a',
+  },
+  hide: {
+    id: 'hide',
+    name: 'Animal Hide',
+    category: 'material',
+    description: 'Supple pelt harvested from deer, boars, and wolves.',
+    maxStack: 30,
+    accentColor: '#9c6644',
+  },
+  fang: {
+    id: 'fang',
+    name: 'Wolf Fang',
+    category: 'material',
+    description: 'Sharp predator fang used for high-tier weapons.',
+    maxStack: 30,
+    accentColor: '#ece4d8',
+  },
+  coal: {
+    id: 'coal',
+    name: 'Charcoal',
+    category: 'material',
+    description: 'High-heat smelting fuel produced in campfires or mined from ridges.',
+    maxStack: 50,
+    accentColor: '#36393f',
+  },
+  copper_ore: {
+    id: 'copper_ore',
+    name: 'Copper Ore',
+    category: 'material',
+    description: 'Green-veined ore ready to be smelted in a Stone Furnace.',
+    maxStack: 40,
+    accentColor: '#c87344',
+  },
+  copper_ingot: {
+    id: 'copper_ingot',
+    name: 'Copper Ingot',
+    category: 'material',
+    description: 'Refined bronze-hued copper bar for durable mid-tier gear.',
+    maxStack: 30,
+    accentColor: '#df854e',
+  },
+  iron_ore: {
+    id: 'iron_ore',
+    name: 'Iron Ore',
+    category: 'material',
+    description: 'Heavy highland ore requiring a furnace to smelt.',
+    maxStack: 40,
+    accentColor: '#7f8996',
+  },
+  iron_ingot: {
+    id: 'iron_ingot',
+    name: 'Iron Ingot',
+    category: 'material',
+    description: 'Forged iron bar for steel-grade tools, armor, and fortifications.',
+    maxStack: 30,
+    accentColor: '#b7c4d4',
+  },
+  obsidian: {
+    id: 'obsidian',
+    name: 'Volcanic Obsidian',
+    category: 'material',
+    description: 'Razor-sharp volcanic glass mined atop Obsidian Spire.',
+    maxStack: 30,
+    accentColor: '#4b3b66',
+  },
+  ancient_shard: {
+    id: 'ancient_shard',
+    name: 'Ancient Shard',
+    category: 'material',
+    description: 'Humming runic crystal pulsing with primordial island energy.',
+    maxStack: 25,
+    accentColor: '#49e5d8',
+  },
+  shadow_essence: {
+    id: 'shadow_essence',
+    name: 'Shadow Essence',
+    category: 'material',
+    description: 'Condensed night-mist dropped by defeated Shadow Stalkers.',
+    maxStack: 25,
+    accentColor: '#a855f7',
+  },
+
+  // ---- Consumables ----
+  berries: {
+    id: 'berries',
+    name: 'Wild Berries',
+    category: 'consumable',
+    description: 'Sweet coastal berries that ease both hunger and thirst.',
+    maxStack: 30,
+    hungerRestore: 14,
+    thirstRestore: 10,
+    heal: 4,
+    accentColor: '#d94862',
+  },
+  coconut: {
+    id: 'coconut',
+    name: 'Fresh Coconut',
+    category: 'consumable',
+    description: 'Cool palm water and rich meat. Great for hydration.',
+    maxStack: 20,
+    hungerRestore: 15,
+    thirstRestore: 32,
+    heal: 5,
+    accentColor: '#8d5b34',
+  },
+  mushroom: {
+    id: 'mushroom',
+    name: 'Forest Mushroom',
+    category: 'consumable',
+    description: 'Earthy woodland cap. Best simmered into hearty stew.',
+    maxStack: 30,
+    hungerRestore: 12,
+    thirstRestore: 4,
+    heal: 3,
+    accentColor: '#c78c56',
+  },
+  raw_meat: {
+    id: 'raw_meat',
+    name: 'Raw Venison',
+    category: 'consumable',
+    description: 'Uncooked game meat. Roast over a campfire for huge nourishment.',
+    maxStack: 20,
+    hungerRestore: 14,
+    heal: -4,
+    accentColor: '#b84242',
+  },
+  cooked_meat: {
+    id: 'cooked_meat',
+    name: 'Seared Steak',
+    category: 'consumable',
+    description: 'Savory fire-roasted venison that restores health, warmth, and hunger.',
+    maxStack: 20,
+    hungerRestore: 46,
+    heal: 24,
+    warmthRestore: 15,
+    accentColor: '#9c4c24',
+  },
+  hearty_stew: {
+    id: 'hearty_stew',
+    name: 'Wildreach Stew',
+    category: 'consumable',
+    description: 'Rich meat, mushroom, and berry stew. Restores all vitals.',
+    maxStack: 15,
+    hungerRestore: 62,
+    thirstRestore: 36,
+    heal: 40,
+    warmthRestore: 28,
+    accentColor: '#e07a32',
+  },
+  bandage: {
+    id: 'bandage',
+    name: 'Herbal Bandage',
+    category: 'consumable',
+    description: 'Woven fiber dressing that quickly mends wounds.',
+    maxStack: 15,
+    heal: 36,
+    accentColor: '#e8e2d0',
+  },
+  vitality_elixir: {
+    id: 'vitality_elixir',
+    name: 'Runic Elixir',
+    category: 'consumable',
+    description: 'Luminous tonic distilled from Ancient Shards. Full battle recovery.',
+    maxStack: 10,
+    heal: 85,
+    thirstRestore: 45,
+    warmthRestore: 20,
+    accentColor: '#38f2dc',
+  },
+
+  // ---- Tools & Light ----
+  torch: {
+    id: 'torch',
+    name: 'Resin Torch',
+    category: 'light',
+    description: 'Casts warm flickering light, staves off chill, and wards off Night Stalkers.',
+    maxStack: 1,
+    maxDurability: 120,
+    damage: 11,
+    attackCooldown: 0.55,
+    range: 2.8,
+    emitsLight: true,
+    accentColor: '#ff9b30',
+  },
+  build_hammer: {
+    id: 'build_hammer',
+    name: 'Builder Hammer',
+    category: 'tool',
+    description: 'Equip or press [B] to construct and repair modular shelters and stations.',
+    maxStack: 1,
+    maxDurability: 200,
+    toolKind: 'hammer',
+    damage: 12,
+    attackCooldown: 0.55,
+    range: 2.8,
+    accentColor: '#c48f52',
+  },
+  stone_axe: {
+    id: 'stone_axe',
+    name: 'Stone Hatchet',
+    category: 'tool',
+    description: 'Fells trees briskly and doubles as a rugged survival cleaver.',
+    maxStack: 1,
+    maxDurability: 90,
+    tier: 1,
+    toolKind: 'axe',
+    gatherPower: 28,
+    damage: 18,
+    attackCooldown: 0.55,
+    range: 3.1,
+    accentColor: '#949ca6',
+  },
+  stone_pickaxe: {
+    id: 'stone_pickaxe',
+    name: 'Stone Pickaxe',
+    category: 'tool',
+    description: 'Breaks boulders and unlocks Copper & Iron mining.',
+    maxStack: 1,
+    maxDurability: 90,
+    tier: 1,
+    toolKind: 'pickaxe',
+    gatherPower: 28,
+    damage: 16,
+    attackCooldown: 0.6,
+    range: 3.1,
+    accentColor: '#818c99',
+  },
+  iron_axe: {
+    id: 'iron_axe',
+    name: 'Forged Iron Axe',
+    category: 'tool',
+    description: 'Heavy honed iron blade that drops giant pines in a few clean strikes.',
+    maxStack: 1,
+    maxDurability: 200,
+    tier: 2,
+    toolKind: 'axe',
+    gatherPower: 52,
+    damage: 30,
+    attackCooldown: 0.5,
+    range: 3.3,
+    accentColor: '#c3d2e3',
+  },
+  iron_pickaxe: {
+    id: 'iron_pickaxe',
+    name: 'Forged Iron Pickaxe',
+    category: 'tool',
+    description: 'Shatters Obsidian veins and Ancient Crystals with ease.',
+    maxStack: 1,
+    maxDurability: 200,
+    tier: 2,
+    toolKind: 'pickaxe',
+    gatherPower: 52,
+    damage: 25,
+    attackCooldown: 0.55,
+    range: 3.3,
+    accentColor: '#b0c2d6',
+  },
+
+  // ---- Weapons & Ammo ----
+  wood_spear: {
+    id: 'wood_spear',
+    name: 'Flint-Tipped Spear',
+    category: 'weapon',
+    description: 'Long-reach thrusting spear for keeping boars and wolves at bay.',
+    maxStack: 1,
+    maxDurability: 100,
+    tier: 1,
+    damage: 26,
+    attackCooldown: 0.52,
+    range: 3.9,
+    accentColor: '#ba8c56',
+  },
+  hunting_bow: {
+    id: 'hunting_bow',
+    name: 'Hunting Bow',
+    category: 'weapon',
+    description: 'Draw and release high-velocity Flint Arrows to hunt at range.',
+    maxStack: 1,
+    maxDurability: 130,
+    tier: 1,
+    damage: 38,
+    attackCooldown: 0.65,
+    range: 45,
+    isRanged: true,
+    ammoItemId: 'flint_arrow',
+    accentColor: '#a8703b',
+  },
+  flint_arrow: {
+    id: 'flint_arrow',
+    name: 'Flint Arrow',
+    category: 'ammo',
+    description: 'Fletched timber arrow tipped with chipped flint.',
+    maxStack: 50,
+    accentColor: '#d0c8b8',
+  },
+  iron_sword: {
+    id: 'iron_sword',
+    name: 'Iron Broadsword',
+    category: 'weapon',
+    description: 'Balanced steel-tempered sword with sweeping melee cleave.',
+    maxStack: 1,
+    maxDurability: 220,
+    tier: 2,
+    damage: 44,
+    attackCooldown: 0.45,
+    range: 3.6,
+    accentColor: '#d5e0ec',
+  },
+  shadow_blade: {
+    id: 'shadow_blade',
+    name: 'Shadowsteel Greatsword',
+    category: 'weapon',
+    description: 'Obsidian-edged runic blade infused with Shadow Essence.',
+    maxStack: 1,
+    maxDurability: 350,
+    tier: 3,
+    damage: 68,
+    attackCooldown: 0.44,
+    range: 4.0,
+    emitsLight: true,
+    accentColor: '#a855f7',
+  },
+  starlight_bow: {
+    id: 'starlight_bow',
+    name: 'Starlight Recurve',
+    category: 'weapon',
+    description: 'Runic bow firing blazing astral bolts without losing momentum.',
+    maxStack: 1,
+    maxDurability: 300,
+    tier: 3,
+    damage: 64,
+    attackCooldown: 0.52,
+    range: 60,
+    isRanged: true,
+    ammoItemId: 'flint_arrow',
+    emitsLight: true,
+    accentColor: '#38f2dc',
+  },
+
+  // ---- Armor ----
+  leather_armor: {
+    id: 'leather_armor',
+    name: 'Ranger Hide Tunic',
+    category: 'armor',
+    description: 'Layered hide vest reducing incoming damage by 25% and adding warmth.',
+    maxStack: 1,
+    maxDurability: 150,
+    armorRating: 25,
+    accentColor: '#8d5936',
+  },
+  iron_armor: {
+    id: 'iron_armor',
+    name: 'Highland Iron Plate',
+    category: 'armor',
+    description: 'Heavy forged plates reducing incoming damage by 48%.',
+    maxStack: 1,
+    maxDurability: 280,
+    armorRating: 48,
+    accentColor: '#98a7b8',
+  },
+  runic_armor: {
+    id: 'runic_armor',
+    name: 'Aegis of the Spire',
+    category: 'armor',
+    description: 'Obsidian & crystal ward armor reducing damage by 65%.',
+    maxStack: 1,
+    maxDurability: 420,
+    armorRating: 65,
+    accentColor: '#5eead4',
+  },
+
+  // ---- Placeable Structure Kits (can also be built directly via Build Mode!) ----
+  kit_campfire: {
+    id: 'kit_campfire',
+    name: 'Campfire Kit',
+    category: 'structure',
+    description: 'Place to cook food, stay warm, and repel Night Stalkers.',
+    maxStack: 5,
+    structureKind: 'campfire',
+    accentColor: '#ff7b29',
+  },
+  kit_workbench: {
+    id: 'kit_workbench',
+    name: 'Workbench Kit',
+    category: 'structure',
+    description: 'Unlocks Tier 1 tools, bows, armor, and base building.',
+    maxStack: 3,
+    structureKind: 'workbench',
+    accentColor: '#b57b42',
+  },
+  kit_bedroll: {
+    id: 'kit_bedroll',
+    name: 'Camp Bedroll',
+    category: 'structure',
+    description: 'Sets your personal respawn point on the island.',
+    maxStack: 2,
+    structureKind: 'bedroll',
+    accentColor: '#c95c4b',
+  },
+};
+
+export function getItem(id: string | null | undefined): ItemDef | null {
+  if (!id) return null;
+  return ITEMS[id] ?? null;
+}
