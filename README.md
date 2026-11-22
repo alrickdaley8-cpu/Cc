@@ -4,15 +4,14 @@ A full-stack, cross-device 3D multiplayer survival game built with **TypeScript*
 
 > **Works everywhere:** Desktop (WASD + Mouse), Tablet & Mobile (Dual-Thumb Virtual Joystick + Touch Camera Look + Ergonomic Action Pad), live Node.js multiplayer servers, AND static **GitHub Pages** hosting via an automatic built-in browser survival simulation fallback!
 
-## Live GitHub Pages Link (How to Enable in 2 Clicks)
+## Live GitHub Pages & Root Preview (Works Out of the Box!)
 
-This repository includes an automated GitHub Actions Pages workflow (`.github/workflows/deploy-pages.yml`) and relative asset paths (`base: './'`) so it deploys cleanly to:
+The production client bundle is synced directly to the **repository root** (`index.html`, `404.html`, `.nojekyll`, `assets/`) AND wired to an automated GitHub Actions workflow (`.github/workflows/deploy-pages.yml`).
 
-**`https://alrickdaley8-cpu.github.io/Cc/`**
-
-1. Merge this branch (`arena/ff7fd174-cc`) into `main` (or trigger **Actions → Deploy WILDREACH to GitHub Pages → Run workflow**).
-2. In your GitHub repo, go to **Settings → Pages → Build and deployment → Source** and select **GitHub Actions**.
-3. Wait ~60 seconds for the workflow to turn green, then open `https://alrickdaley8-cpu.github.io/Cc/` on any desktop, phone, or tablet!
+That means **every** GitHub Pages & preview method works immediately:
+- **GitHub Pages (Deploy from a branch → `/ (root)`):** Go to **Settings → Pages**, pick your branch and **`/ (root)`**, and click Save — live at **`https://alrickdaley8-cpu.github.io/Cc/`**!
+- **GitHub Pages (GitHub Actions):** Or pick **Source → GitHub Actions** for automatic rebuilds on every push to `main`.
+- **Root Static / Iframe Previews:** Open `index.html` from any static server (`npx serve .`, `python3 -m http.server`, Arena Live Preview, or embedded iframe preview). Drag-to-look + click-to-act fallback automatically activates whenever an embedded preview restricts Pointer Lock.
 
 ### Adding Live Online Co-op to Your GitHub Pages Link
 - By default on static GitHub Pages, WILDREACH automatically boots in **Local World Mode** (full 3D world, AI camp allies, wildlife, crafting, building, and `localStorage` auto-save).

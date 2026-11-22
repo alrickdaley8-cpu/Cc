@@ -19,6 +19,7 @@ export interface InputCallbacks {
 export class InputController {
   keys = new Set<string>();
   pointerLocked = false;
+  pointerLockBlocked = false;
   mouseLeftDown = false;
   yaw = Math.PI;
   pitch = 0.24;
@@ -30,8 +31,12 @@ export class InputController {
   private cb: InputCallbacks;
   private wheelDelta = 0;
   private dragLookActive = false;
+  private dragButton = -1;
+  private dragStartX = 0;
+  private dragStartY = 0;
   private dragLastX = 0;
   private dragLastY = 0;
+  private dragMoved = false;
 
   constructor(canvas: HTMLCanvasElement, cb: InputCallbacks) {
     this.canvas = canvas;
@@ -46,25 +51,48 @@ export class InputController {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('pointerlockchange', () => {
       this.pointerLocked = document.pointerLockElement === this.canvas;
-      if (!this.pointerLocked) {
+      if (this.pointerLocked) {
+        this.pointerLockBlocked = false;
+        this.dragLookActive = false;
+      } else {
         this.mouseLeftDown = false;
       }
+    });
+    document.addEventListener('pointerlockerror', () => {
+      // Sandboxed preview iframes often disallow Pointer Lock; fall back gracefully
+      this.pointerLockBlocked = true;
     });
   }
 
   requestPointerLock(): void {
-    if (!this.uiOpen && !this.chatOpen && document.pointerLockElement !== this.canvas) {
-      try {
-        this.canvas.requestPointerLock();
-      } catch {
-        // Ignore browser rejection if not triggered by direct gesture
+    if (
+      this.pointerLockBlocked ||
+      this.uiOpen ||
+      this.chatOpen ||
+      document.pointerLockElement === this.canvas ||
+      typeof this.canvas.requestPointerLock !== 'function'
+    ) {
+      return;
+    }
+    try {
+      const maybePromise = this.canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+      if (maybePromise && typeof maybePromise.catch === 'function') {
+        maybePromise.catch(() => {
+          this.pointerLockBlocked = true;
+        });
       }
+    } catch {
+      this.pointerLockBlocked = true;
     }
   }
 
   exitPointerLock(): void {
     if (document.pointerLockElement) {
-      document.exitPointerLock();
+      try {
+        document.exitPointerLock();
+      } catch {
+        // Ignore in restricted preview contexts
+      }
     }
   }
 
@@ -161,6 +189,9 @@ export class InputController {
       const dy = e.clientY - this.dragLastY;
       this.dragLastX = e.clientX;
       this.dragLastY = e.clientY;
+      if (Math.hypot(e.clientX - this.dragStartX, e.clientY - this.dragStartY) > 6) {
+        this.dragMoved = true;
+      }
       this.yaw -= dx * this.sensitivity * 1.45;
       this.pitch = Math.max(-0.95, Math.min(1.22, this.pitch + dy * this.sensitivity * 1.45));
     }
@@ -168,15 +199,18 @@ export class InputController {
 
   private onMouseDown = (e: MouseEvent): void => {
     if (this.uiOpen || this.chatOpen) return;
-    // Right-drag fallback lets desktop users orbit camera even in iframes without Pointer Lock
-    if (!this.pointerLocked && e.button === 2) {
+    if (!this.pointerLocked) {
+      // Allow drag-to-look with either button AND click-to-act in preview iframes where Pointer Lock is blocked
       this.dragLookActive = true;
+      this.dragButton = e.button;
+      this.dragStartX = e.clientX;
+      this.dragStartY = e.clientY;
       this.dragLastX = e.clientX;
       this.dragLastY = e.clientY;
-      return;
-    }
-    if (!this.pointerLocked) {
-      this.requestPointerLock();
+      this.dragMoved = false;
+      if (e.button === 0 && !this.pointerLockBlocked) {
+        this.requestPointerLock();
+      }
       return;
     }
     if (e.button === 0) {
@@ -188,7 +222,21 @@ export class InputController {
   };
 
   private onMouseUp = (e: MouseEvent): void => {
-    if (e.button === 2) this.dragLookActive = false;
+    if (this.dragLookActive && e.button === this.dragButton) {
+      const wasQuickClick = !this.dragMoved && !this.pointerLocked;
+      this.dragLookActive = false;
+      this.dragButton = -1;
+      // In preview iframes (without Pointer Lock), a quick left-click performs Primary Action and right-click Secondary Action!
+      if (wasQuickClick && !this.uiOpen && !this.chatOpen) {
+        if (e.button === 0) {
+          this.cb.onPrimaryDown();
+          this.cb.onPrimaryUp();
+        } else if (e.button === 2) {
+          this.cb.onSecondaryDown();
+        }
+      }
+      return;
+    }
     if (e.button === 0 && this.mouseLeftDown) {
       this.mouseLeftDown = false;
       this.cb.onPrimaryUp();

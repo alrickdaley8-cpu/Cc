@@ -1155,7 +1155,8 @@ class WildreachGame {
           this.input.yaw,
           this.input.pointerLocked,
           this.touch.enabled,
-          this.net.isOfflineMode
+          this.net.isOfflineMode,
+          this.input.pointerLockBlocked
         );
 
         const hasInteract = Boolean(

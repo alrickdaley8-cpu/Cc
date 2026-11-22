@@ -47,6 +47,7 @@ export class NetworkClient {
   private localEngine: LocalGameEngine | null = null;
   private pingTimer: number | null = null;
   private serverUrl = '';
+  private staticHostDetected: boolean | null = null;
   pingMs = 0;
   isOfflineMode = false;
 
@@ -66,6 +67,7 @@ export class NetworkClient {
     const clean = url.trim().replace(/\/+$/, '');
     if (clean !== this.serverUrl) {
       this.serverUrl = clean;
+      this.staticHostDetected = null;
       if (this.socket) {
         this.socket.disconnect();
         this.socket = null;
@@ -73,33 +75,45 @@ export class NetworkClient {
     }
   }
 
-  private isStaticGitHubPages(): boolean {
+  private isStaticHost(): boolean {
+    if (this.serverUrl) return false;
+    if (this.staticHostDetected === true) return true;
+    const host = window.location.hostname;
     return (
-      !this.serverUrl &&
-      (window.location.hostname.endsWith('.github.io') || window.location.protocol === 'file:')
+      window.location.protocol === 'file:' ||
+      host.endsWith('.github.io') ||
+      host.endsWith('raw.githack.com') ||
+      host.endsWith('htmlpreview.github.io')
     );
   }
 
   async fetchRooms(): Promise<{ rooms: RoomSummary[]; serverReachable: boolean }> {
-    if (this.isStaticGitHubPages()) {
+    if (this.isStaticHost()) {
+      this.staticHostDetected = true;
       return { rooms: [], serverReachable: false };
     }
     try {
       const base = this.serverUrl || '';
       const ctrl = new AbortController();
-      const t = window.setTimeout(() => ctrl.abort(), 2500);
+      const t = window.setTimeout(() => ctrl.abort(), 2200);
       const res = await fetch(`${base}/api/rooms`, { signal: ctrl.signal });
       window.clearTimeout(t);
-      if (!res.ok) return { rooms: [], serverReachable: false };
+      const ct = res.headers.get('content-type') || '';
+      if (!res.ok || !ct.includes('application/json')) {
+        if (!this.serverUrl) this.staticHostDetected = true;
+        return { rooms: [], serverReachable: false };
+      }
       const data = (await res.json()) as { rooms?: RoomSummary[] };
+      this.staticHostDetected = false;
       return { rooms: data.rooms ?? [], serverReachable: true };
     } catch {
+      if (!this.serverUrl) this.staticHostDetected = true;
       return { rooms: [], serverReachable: false };
     }
   }
 
   connect(handlers: NetworkHandlers): Promise<{ online: boolean }> {
-    if (this.isStaticGitHubPages()) {
+    if (this.isStaticHost()) {
       this.isOfflineMode = true;
       this.localEngine = new LocalGameEngine(handlers);
       return Promise.resolve({ online: false });

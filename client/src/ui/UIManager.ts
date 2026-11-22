@@ -370,7 +370,8 @@ export class UIManager {
     yaw: number,
     pointerLocked: boolean,
     touchActive = false,
-    isOfflineMode = false
+    isOfflineMode = false,
+    pointerLockBlocked = false
   ): void {
     this.lastSelf = self;
     this.lastPrivate = priv;
@@ -378,12 +379,12 @@ export class UIManager {
     // Death screen
     this.deathOverlay.classList.toggle('hidden', self.alive);
 
-    // Click-to-resume hint (desktop only — never blocks touchscreens)
+    // Click-to-resume hint (hidden on touch devices and in preview iframes where Pointer Lock is unavailable)
     const lockHint = document.getElementById('lock-hint');
     if (lockHint) {
       lockHint.classList.toggle(
         'hidden',
-        touchActive || pointerLocked || this.activePanel !== 'none' || this.chatOpen || !self.alive
+        touchActive || pointerLockBlocked || pointerLocked || this.activePanel !== 'none' || this.chatOpen || !self.alive
       );
     }
 

@@ -16,6 +16,11 @@ const HOST = process.env.HOST || '0.0.0.0';
 
 const app = express();
 app.use(cors());
+app.use((_req, res, next) => {
+  // Ensure live preview iframes are never blocked
+  res.removeHeader('X-Frame-Options');
+  next();
+});
 app.use(express.json());
 
 const httpServer = http.createServer(app);
@@ -49,17 +54,24 @@ app.get('/api/rooms', (_req, res) => {
   });
 });
 
-// Serve built Three.js client if present (production / preview single-port mode)
+// Serve built Three.js client (prefers client/dist, falls back to repo root index.html + assets)
 const clientDist = path.resolve(process.cwd(), '../client/dist');
 const clientDistAlt = path.resolve(process.cwd(), 'client/dist');
-const staticDir = fs.existsSync(clientDist)
-  ? clientDist
-  : fs.existsSync(clientDistAlt)
-  ? clientDistAlt
+const rootStatic = fs.existsSync(path.resolve(process.cwd(), 'index.html'))
+  ? process.cwd()
+  : fs.existsSync(path.resolve(process.cwd(), '../index.html'))
+  ? path.resolve(process.cwd(), '..')
   : null;
 
+const staticDir = fs.existsSync(path.join(clientDist, 'index.html'))
+  ? clientDist
+  : fs.existsSync(path.join(clientDistAlt, 'index.html'))
+  ? clientDistAlt
+  : rootStatic;
+
 if (staticDir) {
-  app.use(express.static(staticDir));
+  app.use('/assets', express.static(path.join(staticDir, 'assets')));
+  app.use(express.static(staticDir, { index: 'index.html' }));
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/socket.io')) return next();
     res.sendFile(path.join(staticDir, 'index.html'));
