@@ -1,5 +1,9 @@
 import { io, type Socket } from 'socket.io-client';
 import type {
+  BoatBuildPayload,
+  BoatChestTransferPayload,
+  BoatControlPayload,
+  BoatState,
   BuildPlacePayload,
   ChatMessage,
   ChestTransferPayload,
@@ -27,6 +31,9 @@ export interface NetworkHandlers {
   onStructureAdd: (st: StructureState) => void;
   onStructureUpdate: (st: StructureState) => void;
   onStructureRemove: (id: string) => void;
+  onBoatAdd: (boat: BoatState) => void;
+  onBoatUpdate: (boat: BoatState) => void;
+  onBoatRemove: (id: string) => void;
   onLootAdd: (loot: LootDropState) => void;
   onLootRemove: (id: string) => void;
   onCombatEvent: (ev: FloatingCombatEvent) => void;
@@ -180,6 +187,9 @@ export class NetworkClient {
       sock.on('structure:add', handlers.onStructureAdd);
       sock.on('structure:update', handlers.onStructureUpdate);
       sock.on('structure:remove', handlers.onStructureRemove);
+      sock.on('boat:add', handlers.onBoatAdd);
+      sock.on('boat:update', handlers.onBoatUpdate);
+      sock.on('boat:remove', handlers.onBoatRemove);
       sock.on('loot:add', handlers.onLootAdd);
       sock.on('loot:remove', handlers.onLootRemove);
       sock.on('combat:event', handlers.onCombatEvent);
@@ -264,6 +274,26 @@ export class NetworkClient {
   sendChestTransfer(payload: ChestTransferPayload): void {
     if (this.isOfflineMode) this.localEngine?.handleChestTransfer(payload);
     else this.socket?.emit('player:chestTransfer', payload);
+  }
+  sendBuildBoat(payload: BoatBuildPayload): void {
+    if (this.isOfflineMode) this.localEngine?.handleBuildBoat(payload);
+    else this.socket?.emit('boat:build', payload);
+  }
+  sendBoardBoat(boatId: string | null): void {
+    if (this.isOfflineMode) this.localEngine?.handleBoardBoat(boatId);
+    else this.socket?.emit('boat:board', boatId);
+  }
+  sendBoatControl(payload: BoatControlPayload): void {
+    if (this.isOfflineMode) this.localEngine?.handleBoatControl(payload);
+    else this.socket?.emit('boat:control', payload);
+  }
+  sendBoatChestTransfer(payload: BoatChestTransferPayload): void {
+    if (this.isOfflineMode) this.localEngine?.handleBoatChestTransfer(payload);
+    else this.socket?.emit('boat:chestTransfer', payload);
+  }
+  sendFishCatch(deepWater: boolean): void {
+    if (this.isOfflineMode) this.localEngine?.handleFishCatch({ deepWater });
+    else this.socket?.emit('player:fishCatch', { deepWater });
   }
   sendRespawn(): void {
     if (this.isOfflineMode) this.localEngine?.handleRespawn();

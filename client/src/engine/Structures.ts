@@ -15,6 +15,8 @@ interface StructureVisual {
   doorPivot?: THREE.Group;
   crystal?: THREE.Mesh;
   waterMesh?: THREE.Mesh;
+  spinner?: THREE.Object3D;
+  cropGroup?: THREE.Group;
 }
 
 export class StructureManager {
@@ -508,6 +510,210 @@ export class StructureManager {
         }
         break;
       }
+
+      case 'dock_pier': {
+        const deck = new THREE.Mesh(new THREE.BoxGeometry(BUILD_GRID, 0.24, BUILD_GRID), this.mats.wood);
+        deck.position.y = 0.36;
+        deck.castShadow = true;
+        deck.receiveShadow = true;
+        g.add(deck);
+        // Tall sturdy pilings reaching down into seabed
+        const p = BUILD_GRID * 0.44;
+        for (const [px, pz] of [[-p, -p], [p, -p], [-p, p], [p, p]]) {
+          const post = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.17, 5.2, 7), this.mats.woodDark);
+          post.position.set(px, -1.7, pz);
+          post.castShadow = true;
+          g.add(post);
+        }
+        // Mooring bollard
+        const bollard = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.16, 0.65, 8), this.mats.woodDark);
+        bollard.position.set(p * 0.85, 0.72, p * 0.85);
+        g.add(bollard);
+        break;
+      }
+
+      case 'lighthouse_beacon': {
+        const tower = new THREE.Mesh(
+          new THREE.CylinderGeometry(1.05, 1.65, 7.6, 12),
+          new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.75 })
+        );
+        tower.position.y = 3.8;
+        tower.castShadow = true;
+        tower.receiveShadow = true;
+        const stripe = new THREE.Mesh(
+          new THREE.CylinderGeometry(1.25, 1.42, 1.8, 12),
+          new THREE.MeshStandardMaterial({ color: '#dc2626', roughness: 0.72 })
+        );
+        stripe.position.y = 4.2;
+        const gallery = new THREE.Mesh(new THREE.CylinderGeometry(1.45, 1.3, 0.35, 12), this.mats.iron);
+        gallery.position.y = 7.65;
+        const cap = new THREE.Mesh(
+          new THREE.ConeGeometry(1.25, 1.2, 12),
+          new THREE.MeshStandardMaterial({ color: '#b91c1c', roughness: 0.65 })
+        );
+        cap.position.y = 9.2;
+        const orb = new THREE.Mesh(
+          new THREE.SphereGeometry(0.55, 12, 12),
+          new THREE.MeshBasicMaterial({ color: '#fef08a' })
+        );
+        orb.position.y = 8.25;
+        g.add(tower, stripe, gallery, cap, orb);
+
+        // Sweeping volumetric rotating lighthouse beam!
+        const spinner = new THREE.Group();
+        spinner.position.y = 8.25;
+        const beamMat = new THREE.MeshBasicMaterial({
+          color: '#fde68a',
+          transparent: true,
+          opacity: 0.17,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        for (const dir of [-1, 1]) {
+          const cone = new THREE.Mesh(new THREE.ConeGeometry(4.2, 34, 14, 1, true), beamMat);
+          cone.rotation.z = (dir * Math.PI) / 2;
+          cone.position.x = dir * 17;
+          spinner.add(cone);
+        }
+        g.add(spinner);
+        vis.spinner = spinner;
+
+        if (!isGhost) {
+          const light = new THREE.PointLight('#fde047', 11, 45, 1.2);
+          light.position.y = 8.3;
+          g.add(light);
+          vis.light = light;
+        }
+        break;
+      }
+
+      case 'planter_box': {
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.55, 1.25), this.mats.wood);
+        frame.position.y = 0.28;
+        frame.castShadow = true;
+        const soil = new THREE.Mesh(
+          new THREE.BoxGeometry(1.65, 0.14, 1.05),
+          new THREE.MeshStandardMaterial({ color: '#3f2818', roughness: 0.96 })
+        );
+        soil.position.y = 0.52;
+        g.add(frame, soil);
+
+        const cropGroup = new THREE.Group();
+        const leafMat = new THREE.MeshStandardMaterial({ color: '#22c55e', roughness: 0.7 });
+        const bloomMat = new THREE.MeshStandardMaterial({
+          color: '#fde047',
+          emissive: '#f59e0b',
+          emissiveIntensity: 0.55,
+        });
+        for (let i = -1; i <= 1; i++) {
+          const bush = new THREE.Mesh(new THREE.DodecahedronGeometry(0.24, 0), leafMat);
+          bush.position.set(i * 0.48, 0.72, 0);
+          const flower = new THREE.Mesh(new THREE.OctahedronGeometry(0.14, 0), bloomMat);
+          flower.position.set(i * 0.48, 0.96, 0);
+          cropGroup.add(bush, flower);
+        }
+        g.add(cropGroup);
+        vis.cropGroup = cropGroup;
+        break;
+      }
+
+      case 'alchemy_cauldron': {
+        const pot = new THREE.Mesh(new THREE.SphereGeometry(0.68, 12, 10, 0, Math.PI * 2, Math.PI * 0.3, Math.PI * 0.7), this.mats.iron);
+        pot.position.y = 0.85;
+        pot.castShadow = true;
+        const brew = new THREE.Mesh(
+          new THREE.CircleGeometry(0.56, 12),
+          new THREE.MeshBasicMaterial({ color: '#2dd4bf' })
+        );
+        brew.rotation.x = -Math.PI / 2;
+        brew.position.y = 1.02;
+        g.add(pot, brew);
+        for (let i = 0; i < 3; i++) {
+          const a = (i / 3) * Math.PI * 2;
+          const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 1.55, 6), this.mats.woodDark);
+          leg.position.set(Math.cos(a) * 0.58, 0.75, Math.sin(a) * 0.58);
+          leg.rotation.z = Math.cos(a) * 0.25;
+          leg.rotation.x = -Math.sin(a) * 0.25;
+          g.add(leg);
+        }
+        if (!isGhost) {
+          const light = new THREE.PointLight('#2dd4bf', 4.2, 12, 1.6);
+          light.position.y = 1.25;
+          g.add(light);
+          vis.light = light;
+        }
+        break;
+      }
+
+      case 'windmill': {
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.65, 5.8, 8), this.mats.stone);
+        base.position.y = 2.9;
+        base.castShadow = true;
+        const roof = new THREE.Mesh(new THREE.ConeGeometry(1.4, 1.7, 8), this.mats.woodDark);
+        roof.position.y = 6.55;
+        g.add(base, roof);
+
+        const rotor = new THREE.Group();
+        rotor.position.set(0, 5.3, 1.25);
+        const sailMat = new THREE.MeshStandardMaterial({ color: '#f5ead6', roughness: 0.85, side: THREE.DoubleSide });
+        for (let i = 0; i < 4; i++) {
+          const arm = new THREE.Group();
+          arm.rotation.z = (i * Math.PI) / 2;
+          const spar = new THREE.Mesh(new THREE.BoxGeometry(0.12, 3.2, 0.1), this.mats.woodDark);
+          spar.position.y = 1.6;
+          const canvas = new THREE.Mesh(new THREE.BoxGeometry(0.75, 2.55, 0.04), sailMat);
+          canvas.position.set(0.36, 1.85, 0.04);
+          arm.add(spar, canvas);
+          rotor.add(arm);
+        }
+        g.add(rotor);
+        vis.spinner = rotor;
+        break;
+      }
+
+      case 'camp_banner': {
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 4.2, 6), this.mats.woodDark);
+        pole.position.y = 2.1;
+        pole.castShadow = true;
+        const cloth = new THREE.Mesh(
+          new THREE.PlaneGeometry(1.45, 0.9),
+          new THREE.MeshStandardMaterial({
+            color: '#0d9488',
+            emissive: '#115e59',
+            emissiveIntensity: 0.25,
+            side: THREE.DoubleSide,
+          })
+        );
+        cloth.position.set(0.76, 3.55, 0);
+        g.add(pole, cloth);
+        vis.spinner = cloth;
+        break;
+      }
+
+      case 'tiki_brazier': {
+        const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.56, 1.25, 7), this.mats.stone);
+        ped.position.y = 0.62;
+        ped.castShadow = true;
+        const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.35, 0.42, 8), this.mats.iron);
+        bowl.position.y = 1.38;
+        g.add(ped, bowl);
+        const flame = new THREE.Group();
+        const outer = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.95, 6), this.mats.flameOuter);
+        outer.position.y = 1.85;
+        const inner = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.6, 5), this.mats.flameInner);
+        inner.position.y = 1.75;
+        flame.add(outer, inner);
+        g.add(flame);
+        vis.flame = flame;
+        if (!isGhost) {
+          const light = new THREE.PointLight('#ff9436', 6.2, 18, 1.5);
+          light.position.y = 2.0;
+          g.add(light);
+          vis.light = light;
+        }
+        break;
+      }
     }
 
     return vis;
@@ -536,6 +742,20 @@ export class StructureManager {
         const lvl = (vis.state.waterLevel ?? 0) / 100;
         vis.waterMesh.position.y = 0.15 + lvl * 0.68;
         vis.waterMesh.visible = lvl > 0.04;
+      }
+      if (vis.spinner) {
+        if (vis.state.kind === 'lighthouse_beacon') {
+          vis.spinner.rotation.y = elapsed * 0.72;
+        } else if (vis.state.kind === 'windmill') {
+          vis.spinner.rotation.z = -elapsed * 1.15;
+        } else if (vis.state.kind === 'camp_banner') {
+          vis.spinner.rotation.y = Math.sin(elapsed * 4.5 + vis.state.x) * 0.24;
+        }
+      }
+      if (vis.cropGroup) {
+        const prog = (vis.state.cropProgress ?? 30) / 100;
+        const sc = 0.35 + prog * 0.75;
+        vis.cropGroup.scale.set(sc, sc, sc);
       }
     }
   }

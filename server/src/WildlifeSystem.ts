@@ -96,6 +96,54 @@ export const WILDLIFE_CONFIG: Record<WildlifeKind, WildlifeConfig> = {
       { itemId: 'ancient_shard', min: 1, max: 2, chance: 0.65 },
     ],
   },
+  crab: {
+    maxHp: 55,
+    walkSpeed: 2.2,
+    runSpeed: 4.4,
+    damage: 9,
+    attackRange: 1.9,
+    aggroRange: 7,
+    hostile: true,
+    fleeRange: 0,
+    xp: 22,
+    drops: [
+      { itemId: 'crab_meat', min: 1, max: 3 },
+      { itemId: 'sea_pearl', min: 1, max: 1, chance: 0.35 },
+    ],
+  },
+  serpent: {
+    maxHp: 260,
+    walkSpeed: 4.5,
+    runSpeed: 8.6,
+    damage: 26,
+    attackRange: 4.2,
+    aggroRange: 24,
+    hostile: true,
+    fleeRange: 0,
+    xp: 120,
+    drops: [
+      { itemId: 'serpent_scale', min: 2, max: 4 },
+      { itemId: 'serpent_meat', min: 2, max: 4 },
+      { itemId: 'sea_pearl', min: 1, max: 2, chance: 0.65 },
+    ],
+  },
+  cinder_golem: {
+    maxHp: 420,
+    walkSpeed: 2.4,
+    runSpeed: 5.2,
+    damage: 36,
+    attackRange: 3.4,
+    aggroRange: 22,
+    hostile: true,
+    fleeRange: 0,
+    xp: 180,
+    drops: [
+      { itemId: 'obsidian', min: 3, max: 5 },
+      { itemId: 'iron_ingot', min: 2, max: 4 },
+      { itemId: 'ancient_shard', min: 2, max: 3 },
+      { itemId: 'gold_coin', min: 5, max: 12 },
+    ],
+  },
 };
 
 export interface WildlifeCallbacks {
@@ -118,6 +166,35 @@ export class WildlifeSystem {
     this.spawnBiomeGroup('deer', 13, ['meadow', 'beach']);
     this.spawnBiomeGroup('boar', 8, ['meadow', 'pine', 'marsh']);
     this.spawnBiomeGroup('wolf', 7, ['pine', 'highland', 'volcanic']);
+    this.spawnBiomeGroup('crab', 9, ['beach']);
+
+    // Crabs on Shipwreck Coral Atoll
+    for (const [cx, cz] of [
+      [-145, 132],
+      [-153, 141],
+      [-142, 140],
+    ]) {
+      if (this.world.getHeight(cx, cz) > 0.25) this.createAgent('crab', cx, cz);
+    }
+
+    // Ocean Sea Serpents patrolling the deep straits between main island & outer islands!
+    for (const [sx, sz] of [
+      [-92, 134],
+      [96, 128],
+      [112, -96],
+      [-104, -108],
+      [-168, 22],
+    ]) {
+      if (this.world.getHeight(sx, sz) < -1.8) {
+        const ser = this.createAgent('serpent', sx, sz);
+        ser.y = WATER_LEVEL - 0.15;
+      }
+    }
+
+    // Volcanic Obsidian Isle Elite Boss: Obsidian Cinder Golem!
+    if (this.world.getHeight(152, -136) > 1.0) {
+      this.createAgent('cinder_golem', 152, -136);
+    }
   }
 
   private spawnBiomeGroup(kind: WildlifeKind, count: number, biomes: string[]): void {
@@ -298,7 +375,7 @@ export class WildlifeSystem {
         if (now >= a.respawnAt) {
           a.x = a.homeX + (Math.random() - 0.5) * 14;
           a.z = a.homeZ + (Math.random() - 0.5) * 14;
-          a.y = this.world.getHeight(a.x, a.z);
+          a.y = a.kind === 'serpent' ? WATER_LEVEL - 0.15 : this.world.getHeight(a.x, a.z);
           a.hp = a.maxHp;
           a.state = 'idle';
           a.aggroTargetId = null;
@@ -417,7 +494,9 @@ export class WildlifeSystem {
           const dist = 6 + Math.random() * 14;
           const tx = clamp(a.homeX + Math.cos(ang) * dist, -135, 135);
           const tz = clamp(a.homeZ + Math.sin(ang) * dist, -135, 135);
-          if (this.world.getHeight(tx, tz) > 0.65) {
+          const isAquatic = a.kind === 'serpent';
+          const hCheck = this.world.getHeight(tx, tz);
+          if (isAquatic ? hCheck < WATER_LEVEL - 1.4 : hCheck > 0.65) {
             a.targetX = tx;
             a.targetZ = tz;
             a.state = 'wander';
@@ -450,8 +529,23 @@ export class WildlifeSystem {
     const nx = a.x + (dx / dist) * step;
     const nz = a.z + (dz / dist) * step;
 
-    // Avoid walking deep into ocean
     const nh = this.world.getHeight(nx, nz);
+    if (a.kind === 'serpent') {
+      // Sea serpents stay in deep open water!
+      if (nh > WATER_LEVEL - 0.9) {
+        a.thinkTimer = 0;
+        a.speed = 0;
+        return true;
+      }
+      a.x = nx;
+      a.z = nz;
+      a.y = WATER_LEVEL - 0.15;
+      a.yaw = Math.atan2(dx, dz);
+      a.speed = speed;
+      return false;
+    }
+
+    // Land creatures avoid walking deep into ocean
     if (nh < WATER_LEVEL + 0.25) {
       a.thinkTimer = 0;
       a.speed = 0;

@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import type { Server, Socket } from 'socket.io';
 import {
+  BOATS,
   CHEST_SIZE,
   DAY_LENGTH_SECONDS,
   HOTBAR_SIZE,
@@ -13,8 +14,13 @@ import {
   WorldGenerator,
   clamp,
   computeSnappedPlacement,
+  computeWindSailEfficiency,
   getItem,
   getRecipe,
+  type BoatBuildPayload,
+  type BoatChestTransferPayload,
+  type BoatControlPayload,
+  type BoatState,
   type BuildPlacePayload,
   type ChatMessage,
   type ChestTransferPayload,
@@ -54,6 +60,7 @@ interface PersistedRoomData {
   day: number;
   timeOfDay: number;
   structures: StructureState[];
+  boats?: BoatState[];
 }
 
 export class GameRoom {
@@ -71,6 +78,8 @@ export class GameRoom {
   private lastDodgeTime: Map<string, number> = new Map();
   private nodes: Map<string, ResourceNodeState> = new Map();
   private structures: Map<string, StructureState> = new Map();
+  private boats: Map<string, BoatState> = new Map();
+  private boatSteerInputs: Map<string, number> = new Map();
   private loot: Map<string, LootDropState> = new Map();
   private projectiles: Map<string, ProjectileState & { bornAt: number }> = new Map();
   private chatHistory: ChatMessage[] = [];
@@ -169,6 +178,33 @@ export class GameRoom {
       maxHp: 240,
       chestSlots,
     });
+
+    // Starter Timber Raft moored right off the South Harbor Jetty so players can sail immediately!
+    this.ensureStarterBoat();
+  }
+
+  private ensureStarterBoat(): void {
+    if (this.boats.size > 0) return;
+    const spot = this.world.getStarterBoatSpot();
+    const def = BOATS.raft;
+    this.boats.set('boat_starter_raft', {
+      id: 'boat_starter_raft',
+      kind: 'raft',
+      ownerId: 'world',
+      ownerName: 'Harbor',
+      x: spot.x,
+      y: WATER_LEVEL,
+      z: spot.z,
+      yaw: spot.yaw,
+      vx: 0,
+      vz: 0,
+      speed: 0,
+      throttle: 0,
+      rudder: 0,
+      hp: def.maxHp,
+      maxHp: def.maxHp,
+      pilotId: null,
+    });
   }
 
   private loadFromDisk(): boolean {
@@ -184,6 +220,12 @@ export class GameRoom {
           this.structures.set(s.id, s);
         }
       }
+      if (Array.isArray(data.boats)) {
+        for (const b of data.boats) {
+          this.boats.set(b.id, { ...b, pilotId: null, speed: 0, vx: 0, vz: 0, throttle: 0 });
+        }
+      }
+      this.ensureStarterBoat();
       return this.structures.size > 0;
     } catch {
       return false;
@@ -197,6 +239,7 @@ export class GameRoom {
         day: this.time.day,
         timeOfDay: this.time.timeOfDay,
         structures: Array.from(this.structures.values()),
+        boats: Array.from(this.boats.values()).map((b) => ({ ...b, pilotId: null })),
       };
       fs.writeFileSync(this.dataFile, JSON.stringify(payload), 'utf8');
     } catch {
@@ -288,6 +331,7 @@ export class GameRoom {
         nearWorkbench: false,
         nearFurnace: false,
         nearRunicForge: false,
+        nearCauldron: false,
         nearFreshWater: false,
       },
       alive: true,
@@ -300,6 +344,7 @@ export class GameRoom {
       daysSurvived: 1,
       emote: null,
       emoteUntil: 0,
+      boatId: null,
     };
 
     const priv: LocalPlayerPrivateState = {
@@ -336,6 +381,7 @@ export class GameRoom {
       privateState: priv,
       nodes: Array.from(this.nodes.values()),
       structures: Array.from(this.structures.values()),
+      boats: Array.from(this.boats.values()),
       wildlife: this.wildlife.getSnapshots(),
       loot: Array.from(this.loot.values()),
       chatHistory: this.chatHistory.slice(-24),
@@ -353,6 +399,14 @@ export class GameRoom {
   removePlayer(socketId: string): void {
     const p = this.players.get(socketId);
     if (!p) return;
+    if (p.boatId) {
+      const boat = this.boats.get(p.boatId);
+      if (boat && boat.pilotId === socketId) {
+        boat.pilotId = null;
+        boat.throttle = 0;
+        this.boatSteerInputs.delete(boat.id);
+      }
+    }
     this.players.delete(socketId);
     this.privateStates.delete(socketId);
     this.sockets.delete(socketId);
@@ -362,10 +416,15 @@ export class GameRoom {
   handleInput(socketId: string, input: PlayerInputPayload): void {
     const p = this.players.get(socketId);
     if (!p || !p.alive) return;
+    if (p.boatId) {
+      // While piloting a vessel, keep player synced to the helm (only update look pitch)
+      p.pitch = clamp(input.pitch, -1.5, 1.5);
+      return;
+    }
 
-    // Anti-teleport / reasonable movement bounds clamp
-    const clampedX = clamp(input.x, -172, 172);
-    const clampedZ = clamp(input.z, -172, 172);
+    // Anti-teleport / reasonable movement bounds clamp across all outer islands!
+    const clampedX = clamp(input.x, -212, 212);
+    const clampedZ = clamp(input.z, -212, 212);
     const dist = Math.hypot(clampedX - p.x, clampedZ - p.z);
     if (dist < 6.5) {
       p.x = clampedX;
@@ -412,8 +471,8 @@ export class GameRoom {
     p.vitals.stamina -= 18;
     p.anim = 'dodge';
     const len = Math.hypot(dir.x, dir.z) || 1;
-    const nx = clamp(p.x + (dir.x / len) * 3.4, -170, 170);
-    const nz = clamp(p.z + (dir.z / len) * 3.4, -170, 170);
+    const nx = clamp(p.x + (dir.x / len) * 3.4, -212, 212);
+    const nz = clamp(p.z + (dir.z / len) * 3.4, -212, 212);
     p.x = nx;
     p.z = nz;
     p.y = this.getSupportHeight(nx, nz);
@@ -705,6 +764,18 @@ export class GameRoom {
       } else if (st.kind === 'bedroll') {
         p.bedPos = { x: st.x, y: st.y + 0.3, z: st.z };
         this.notify(socketId, 'Respawn point bound to Camp Bedroll!', 'good');
+      } else if (st.kind === 'planter_box') {
+        if ((st.cropProgress ?? 0) >= 100) {
+          st.cropProgress = 0;
+          addItemToSlots(priv.inventory, 'berries', 4);
+          addItemToSlots(priv.inventory, 'sunbloom', 2);
+          this.io.to(this.id).emit('structure:update', st);
+          this.io.to(this.id).emit('fx:event', { kind: 'build', x: st.x, y: st.y + 0.8, z: st.z });
+          this.notify(socketId, 'Harvested +4 Sunberries & +2 Sunblooms!', 'good');
+          this.sendPrivateState(socketId);
+        } else {
+          this.notify(socketId, `Crops growing (${Math.round(st.cropProgress ?? 0)}%)...`, 'info');
+        }
       } else if (st.kind === 'campfire') {
         if (consumeIngredients(priv.inventory, [{ itemId: 'wood', count: 2 }])) {
           st.lit = true;
@@ -842,6 +913,10 @@ export class GameRoom {
       this.notify(socketId, 'Requires a nearby Runic Forge!', 'warn');
       return;
     }
+    if (recipe.station === 'cauldron' && !p.status.nearCauldron) {
+      this.notify(socketId, 'Stand near an Alchemy Cauldron to brew!', 'warn');
+      return;
+    }
 
     if (!consumeIngredients(priv.inventory, recipe.ingredients)) {
       this.notify(socketId, 'Missing crafting materials!', 'warn');
@@ -885,7 +960,12 @@ export class GameRoom {
     }
 
     const groundH = this.world.getHeight(payload.x, payload.z);
-    if (groundH < WATER_LEVEL - 0.15) {
+    if (payload.kind === 'dock_pier') {
+      if (groundH < -4.2) {
+        this.notify(socketId, 'Dock Piers must be placed in coastal shallows (not abyssal sea).', 'warn');
+        return;
+      }
+    } else if (groundH < WATER_LEVEL - 0.15) {
       this.notify(socketId, 'Cannot build in deep ocean water.', 'warn');
       return;
     }
@@ -937,9 +1017,19 @@ export class GameRoom {
       hp: def.maxHp,
       maxHp: def.maxHp,
       isOpen: payload.kind === 'wood_doorway' ? false : undefined,
-      lit: payload.kind === 'campfire' || payload.kind === 'furnace' || payload.kind === 'lantern_post' || payload.kind === 'watchtower_beacon' ? true : undefined,
+      lit:
+        payload.kind === 'campfire' ||
+        payload.kind === 'furnace' ||
+        payload.kind === 'lantern_post' ||
+        payload.kind === 'watchtower_beacon' ||
+        payload.kind === 'lighthouse_beacon' ||
+        payload.kind === 'tiki_brazier' ||
+        payload.kind === 'alchemy_cauldron'
+          ? true
+          : undefined,
       fuel: payload.kind === 'campfire' ? 80 : undefined,
       waterLevel: payload.kind === 'rain_collector' ? 25 : undefined,
+      cropProgress: payload.kind === 'planter_box' ? 35 : undefined,
       chestSlots: payload.kind === 'storage_chest' ? createEmptyInventory(CHEST_SIZE) : undefined,
     };
 
@@ -956,6 +1046,180 @@ export class GameRoom {
     this.notify(socketId, `Built ${def.name}!`, 'good');
     this.sendPrivateState(socketId);
     this.saveToDisk();
+  }
+
+  handleBuildBoat(socketId: string, payload: BoatBuildPayload): void {
+    const p = this.players.get(socketId);
+    const priv = this.privateStates.get(socketId);
+    if (!p || !priv || !p.alive) return;
+    const def = BOATS[payload.kind];
+    if (!def) return;
+    if (Math.hypot(payload.x - p.x, payload.z - p.z) > 16) {
+      this.notify(socketId, 'Move closer to the shoreline to launch a vessel!', 'warn');
+      return;
+    }
+    const groundH = this.world.getHeight(payload.x, payload.z);
+    if (groundH > WATER_LEVEL - 0.25) {
+      this.notify(socketId, 'Boats must be launched directly onto coastal water!', 'warn');
+      return;
+    }
+    if (def.requiresWorkbench && !p.status.nearWorkbench) {
+      this.notify(socketId, `${def.name} requires a nearby Workbench!`, 'warn');
+      return;
+    }
+    if (!consumeIngredients(priv.inventory, def.costs)) {
+      this.notify(socketId, `Not enough materials to build ${def.name}.`, 'warn');
+      return;
+    }
+
+    const boat: BoatState = {
+      id: `boat_${this.nextEntitySeq++}_${Date.now().toString(36)}`,
+      kind: payload.kind,
+      ownerId: socketId,
+      ownerName: p.name,
+      x: Math.round(payload.x * 100) / 100,
+      y: WATER_LEVEL,
+      z: Math.round(payload.z * 100) / 100,
+      yaw: payload.rotY,
+      vx: 0,
+      vz: 0,
+      speed: 0,
+      throttle: 0,
+      rudder: 0,
+      hp: def.maxHp,
+      maxHp: def.maxHp,
+      pilotId: null,
+      chestSlots: def.cargoSlots > 0 ? createEmptyInventory(def.cargoSlots) : undefined,
+    };
+    this.boats.set(boat.id, boat);
+    this.grantXp(p, payload.kind === 'longship' ? 95 : payload.kind === 'skiff' ? 55 : 28);
+    this.io.to(this.id).emit('boat:add', boat);
+    this.io.to(this.id).emit('fx:event', { kind: 'build', x: boat.x, y: WATER_LEVEL + 0.8, z: boat.z });
+    this.notify(socketId, `Launched ${def.name}! Approach and press [E] to sail!`, 'good');
+    this.sendPrivateState(socketId);
+    this.saveToDisk();
+  }
+
+  handleBoardBoat(socketId: string, boatId: string | null): void {
+    const p = this.players.get(socketId);
+    if (!p || !p.alive) return;
+
+    // Disembark current boat
+    if (p.boatId) {
+      const current = this.boats.get(p.boatId);
+      if (current && current.pilotId === socketId) {
+        current.pilotId = null;
+        current.throttle = 0;
+        this.boatSteerInputs.delete(current.id);
+        // Place player smoothly beside the boat
+        const sideX = Math.cos(current.yaw) * 1.9;
+        const sideZ = -Math.sin(current.yaw) * 1.9;
+        p.x = clamp(current.x + sideX, -212, 212);
+        p.z = clamp(current.z + sideZ, -212, 212);
+        p.y = Math.max(WATER_LEVEL + 0.25, this.world.getHeight(p.x, p.z) + 0.15);
+      }
+      p.boatId = null;
+      this.notify(socketId, 'Stepped off the helm.', 'info');
+      return;
+    }
+
+    if (!boatId) return;
+    const boat = this.boats.get(boatId);
+    if (!boat) return;
+    if (Math.hypot(boat.x - p.x, boat.z - p.z) > 7.5) {
+      this.notify(socketId, 'Swim or walk closer to board this vessel.', 'warn');
+      return;
+    }
+    if (boat.pilotId && boat.pilotId !== socketId) {
+      this.notify(socketId, 'Another survivor is already at the helm!', 'warn');
+      return;
+    }
+
+    boat.pilotId = socketId;
+    p.boatId = boat.id;
+    p.anim = 'idle';
+    this.notify(socketId, `Took the helm of ${BOATS[boat.kind].name}! [W/S] Sails • [A/D] Steer • [E] Disembark`, 'good');
+  }
+
+  handleBoatControl(socketId: string, payload: BoatControlPayload): void {
+    const p = this.players.get(socketId);
+    if (!p || !p.boatId) return;
+    const boat = this.boats.get(p.boatId);
+    if (!boat || boat.pilotId !== socketId) return;
+
+    if (typeof payload.throttle === 'number') {
+      boat.throttle = clamp(Math.round(payload.throttle), -1, 3);
+    } else if (typeof payload.throttleDelta === 'number' && payload.throttleDelta !== 0) {
+      boat.throttle = clamp(boat.throttle + Math.sign(payload.throttleDelta), -1, 3);
+    }
+    this.boatSteerInputs.set(boat.id, clamp(payload.steer, -1, 1));
+  }
+
+  handleBoatChestTransfer(socketId: string, payload: BoatChestTransferPayload): void {
+    const p = this.players.get(socketId);
+    const priv = this.privateStates.get(socketId);
+    if (!p || !priv || !p.alive) return;
+    const boat = this.boats.get(payload.boatId);
+    if (!boat || !boat.chestSlots) return;
+    if (Math.hypot(boat.x - p.x, boat.z - p.z) > 7.5) return;
+
+    if (payload.from === 'inventory') {
+      const slot = priv.inventory[payload.fromIndex];
+      if (!slot) return;
+      const leftover = addItemToSlots(boat.chestSlots, slot.itemId, slot.count);
+      if (leftover === 0) priv.inventory[payload.fromIndex] = null;
+      else slot.count = leftover;
+    } else {
+      const slot = boat.chestSlots[payload.fromIndex];
+      if (!slot) return;
+      const leftover = addItemToSlots(priv.inventory, slot.itemId, slot.count);
+      if (leftover === 0) boat.chestSlots[payload.fromIndex] = null;
+      else slot.count = leftover;
+    }
+    p.equippedItemId = priv.inventory[p.equippedSlot]?.itemId ?? null;
+    this.io.to(this.id).emit('boat:update', boat);
+    this.sendPrivateState(socketId);
+    this.saveToDisk();
+  }
+
+  handleFishCatch(socketId: string, payload: { deepWater: boolean }): void {
+    const p = this.players.get(socketId);
+    const priv = this.privateStates.get(socketId);
+    if (!p || !priv || !p.alive) return;
+
+    const r = Math.random();
+    let itemId = 'raw_fish';
+    let count = 1;
+    let xp = 18;
+    if (payload.deepWater) {
+      if (r < 0.14) {
+        itemId = 'sea_pearl';
+        xp = 42;
+      } else if (r < 0.24) {
+        itemId = 'gold_coin';
+        count = 2 + Math.floor(Math.random() * 3);
+        xp = 36;
+      } else if (r < 0.68) {
+        itemId = 'golden_snapper';
+        xp = 30;
+      }
+    } else {
+      if (r < 0.08) {
+        itemId = 'sea_pearl';
+        xp = 34;
+      } else if (r < 0.32) {
+        itemId = 'golden_snapper';
+        xp = 24;
+      }
+    }
+
+    const leftover = addItemToSlots(priv.inventory, itemId, count);
+    if (leftover > 0) this.spawnLoot(itemId, leftover, p.x, p.y + 0.5, p.z);
+    const itemName = ITEMS[itemId]?.name ?? itemId;
+    this.grantXp(p, xp);
+    this.emitCombatText(p.x, p.y + 2.2, p.z, `Caught ${count}× ${itemName}!`, '#38bdf8', 'gather');
+    this.notify(socketId, `Reeled in ${count}× ${itemName}!`, 'good');
+    this.sendPrivateState(socketId);
   }
 
   handleDemolish(socketId: string, structureId: string): void {
@@ -1189,7 +1453,18 @@ export class GameRoom {
         const rate = this.time.weather === 'rain' || this.time.weather === 'storm' ? 4.2 : 0.55;
         st.waterLevel = Math.min(100, (st.waterLevel ?? 0) + dt * rate);
       }
+      if (st.kind === 'planter_box') {
+        const prev = st.cropProgress ?? 0;
+        const rate = this.time.weather === 'rain' ? 3.2 : 2.1;
+        st.cropProgress = Math.min(100, prev + dt * rate);
+        if (prev < 100 && st.cropProgress >= 100) {
+          this.io.to(this.id).emit('structure:update', st);
+        }
+      }
     }
+
+    // 3b. Simulate Boats (Authoritative Sailing, Wind Efficiency, Grounding & Ramming!)
+    this.updateBoats(dt);
 
     // 4. Resource node regrowth
     for (const n of this.nodes.values()) {
@@ -1213,7 +1488,18 @@ export class GameRoom {
     // 6. Update Wildlife AI
     this.wildlife.update(dt, now, isNight, playerArr, structureArr, {
       onAttackPlayer: (playerId, damage, fromX, fromZ, kind) => {
-        const label = kind === 'stalker' ? 'Shadow Stalker' : kind === 'wolf' ? 'Timber Wolf' : 'Wild Boar';
+        const label =
+          kind === 'stalker'
+            ? 'Shadow Stalker'
+            : kind === 'wolf'
+            ? 'Timber Wolf'
+            : kind === 'crab'
+            ? 'Giant Reef Crab'
+            : kind === 'serpent'
+            ? 'Ocean Sea Serpent'
+            : kind === 'cinder_golem'
+            ? 'Volcanic Cinder Golem'
+            : 'Wild Boar';
         this.applyPlayerDamage(playerId, damage, label, fromX, fromZ);
       },
       onAttackStructure: (structureId, damage) => {
@@ -1303,6 +1589,7 @@ export class GameRoom {
         t: now,
         time: { ...this.time },
         players: Array.from(this.players.values()),
+        boats: Array.from(this.boats.values()),
         wildlife: this.wildlife.getSnapshots(),
         projectiles: Array.from(this.projectiles.values()).map((pr) => ({
           id: pr.id,
@@ -1338,6 +1625,7 @@ export class GameRoom {
     let nearWorkbench = false;
     let nearFurnace = false;
     let nearRunicForge = false;
+    let nearCauldron = false;
     let warmthBonus = 0;
     let roofCount = 0;
     let wallCount = 0;
@@ -1355,8 +1643,15 @@ export class GameRoom {
       } else if (s.kind === 'runic_forge' && d < 9.5) {
         nearRunicForge = true;
         warmthBonus = Math.max(warmthBonus, 20);
+      } else if (s.kind === 'alchemy_cauldron' && d < 8.5) {
+        nearCauldron = true;
+        warmthBonus = Math.max(warmthBonus, 16);
       } else if (s.kind === 'watchtower_beacon' && d < 18) {
         warmthBonus = Math.max(warmthBonus, 28);
+      } else if (s.kind === 'lighthouse_beacon' && d < 14) {
+        warmthBonus = Math.max(warmthBonus, 20);
+      } else if (s.kind === 'tiki_brazier' && d < 10.5) {
+        warmthBonus = Math.max(warmthBonus, 24);
       } else if (s.kind === 'lantern_post' && d < 6) {
         warmthBonus = Math.max(warmthBonus, 14);
       }
@@ -1393,6 +1688,7 @@ export class GameRoom {
       nearWorkbench,
       nearFurnace,
       nearRunicForge,
+      nearCauldron,
       nearFreshWater: this.world.isNearFreshWater(p.x, p.z),
     };
 
@@ -1425,6 +1721,89 @@ export class GameRoom {
     }
   }
 
+  private updateBoats(dt: number): void {
+    for (const b of this.boats.values()) {
+      const def = BOATS[b.kind];
+      const steer = b.pilotId ? this.boatSteerInputs.get(b.id) ?? 0 : 0;
+      b.rudder += (steer - b.rudder) * Math.min(1, dt * 6);
+
+      // Compute target speed based on sail gear + live wind efficiency
+      let targetSpeed = 0;
+      if (b.pilotId) {
+        const windEff = computeWindSailEfficiency(b.yaw, this.time.windDirX, this.time.windDirZ);
+        if (b.throttle === -1) targetSpeed = -def.reverseSpeed;
+        else if (b.throttle === 1) targetSpeed = def.paddleSpeed;
+        else if (b.throttle === 2) targetSpeed = def.halfSailSpeed * windEff;
+        else if (b.throttle === 3) targetSpeed = def.fullSailSpeed * windEff;
+      } else {
+        b.throttle = 0;
+      }
+
+      const accel = b.pilotId ? 2.4 : 1.4;
+      b.speed += (targetSpeed - b.speed) * Math.min(1, dt * accel);
+      if (Math.abs(b.speed) < 0.04 && targetSpeed === 0) b.speed = 0;
+
+      // Turn smoothly (even slowly at idle paddle so docking feels responsive)
+      if (Math.abs(b.rudder) > 0.02) {
+        const turnFactor = 0.55 + Math.min(1, Math.abs(b.speed) / 4.0) * 0.65;
+        const dirSign = b.speed < -0.3 ? -1 : 1;
+        b.yaw -= b.rudder * def.turnRate * turnFactor * dirSign * dt;
+      }
+
+      const fwdX = -Math.sin(b.yaw);
+      const fwdZ = -Math.cos(b.yaw);
+      const nx = clamp(b.x + fwdX * b.speed * dt, -208, 208);
+      const nz = clamp(b.z + fwdZ * b.speed * dt, -208, 208);
+
+      // Prevent boats from driving up onto dry land (check bow & center depth)
+      const bowX = nx + fwdX * (def.length * 0.44);
+      const bowZ = nz + fwdZ * (def.length * 0.44);
+      const hCenter = this.world.getHeight(nx, nz);
+      const hBow = this.world.getHeight(bowX, bowZ);
+      if (hCenter < WATER_LEVEL - 0.3 && hBow < WATER_LEVEL - 0.15) {
+        b.x = nx;
+        b.z = nz;
+        b.vx = fwdX * b.speed;
+        b.vz = fwdZ * b.speed;
+      } else {
+        // Gentle beach bumper slowdown
+        b.speed *= -0.18;
+        b.vx = 0;
+        b.vz = 0;
+      }
+      b.y = WATER_LEVEL;
+
+      // Keep piloted player seated cleanly at the helm!
+      if (b.pilotId) {
+        const pilot = this.players.get(b.pilotId);
+        if (pilot && pilot.alive) {
+          pilot.x = b.x - fwdX * def.helmOffsetZ;
+          pilot.z = b.z - fwdZ * def.helmOffsetZ;
+          pilot.y = WATER_LEVEL + def.deckY;
+          pilot.yaw = b.yaw;
+          pilot.vx = b.vx;
+          pilot.vz = b.vz;
+          pilot.anim = 'idle';
+          pilot.status.wet = false;
+        } else {
+          b.pilotId = null;
+        }
+      }
+
+      // Ramming speed damage against Sea Serpents!
+      if (Math.abs(b.speed) > 4.2 && b.pilotId) {
+        for (const w of this.wildlife.getSnapshots()) {
+          if (w.state === 'dead' || w.kind !== 'serpent') continue;
+          if (Math.hypot(w.x - bowX, w.z - bowZ) < 2.8) {
+            this.applyWildlifeDamage(w.id, def.ramDamage, b.pilotId, b.x, b.z, true);
+            b.speed *= 0.65;
+            break;
+          }
+        }
+      }
+    }
+  }
+
   private applyEnvironmentDamage(p: PlayerState, amount: number, cause: string): void {
     p.vitals.hp = Math.max(0, p.vitals.hp - amount);
     if (p.vitals.hp <= 0 && p.alive) {
@@ -1453,8 +1832,8 @@ export class GameRoom {
     const dx = p.x - fromX;
     const dz = p.z - fromZ;
     const len = Math.hypot(dx, dz) || 1;
-    p.x = clamp(p.x + (dx / len) * 0.65, -170, 170);
-    p.z = clamp(p.z + (dz / len) * 0.65, -170, 170);
+    p.x = clamp(p.x + (dx / len) * 0.65, -212, 212);
+    p.z = clamp(p.z + (dz / len) * 0.65, -212, 212);
 
     if (p.vitals.hp <= 0) {
       this.killPlayer(p, attackerName);

@@ -1,10 +1,13 @@
 import {
+  BOATS,
   BUILDABLE_LIST,
   HOTBAR_SIZE,
   ITEMS,
   RECIPES,
   STRUCTURES,
   getItem,
+  type BoatKind,
+  type BoatState,
   type ChatMessage,
   type InventorySlot,
   type LocalPlayerPrivateState,
@@ -35,7 +38,12 @@ export interface UIActions {
   onDropSlot: (slot: number) => void;
   onCraft: (recipeId: string) => void;
   onSelectBuildKind: (kind: StructureKind | null) => void;
+  onSelectBoatKind: (kind: BoatKind | null) => void;
+  onSetSailGear: (gear: -1 | 0 | 1 | 2 | 3) => void;
+  onDisembarkBoat: () => void;
+  onOpenBoatCargo: () => void;
   onChestTransfer: (structureId: string, from: 'inventory' | 'chest', fromIndex: number) => void;
+  onBoatChestTransfer: (boatId: string, from: 'inventory' | 'chest', fromIndex: number) => void;
   onSendChat: (text: string) => void;
   onRespawn: () => void;
   onTogglePvp: () => void;
@@ -47,13 +55,15 @@ export interface UIActions {
   onResumeGame: () => void;
 }
 
-export type ActivePanel = 'none' | 'inventory' | 'crafting' | 'build' | 'map' | 'chest' | 'pause';
+export type ActivePanel = 'none' | 'inventory' | 'crafting' | 'build' | 'map' | 'chest' | 'boat_cargo' | 'pause';
 
 export class UIManager {
   activePanel: ActivePanel = 'none';
   openChestId: string | null = null;
+  openBoatCargoId: string | null = null;
   chatOpen = false;
   selectedBuildKind: StructureKind = 'wood_foundation';
+  selectedBoatKind: BoatKind | null = null;
 
   private actions: UIActions;
   private selectedInvSlot: number | null = null;
@@ -243,6 +253,20 @@ export class UIManager {
   }
 
   private initChat(): void {
+    // Sailing Helm HUD interactive gear, cargo & disembark buttons
+    document.querySelectorAll<HTMLButtonElement>('#sailing-hud .gear-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const g = Number(btn.dataset.gear) as -1 | 0 | 1 | 2 | 3;
+        this.actions.onSetSailGear(g);
+      });
+    });
+    document.getElementById('btn-sail-disembark')?.addEventListener('click', () => {
+      this.actions.onDisembarkBoat();
+    });
+    document.getElementById('btn-sail-cargo')?.addEventListener('click', () => {
+      this.actions.onOpenBoatCargo();
+    });
+
     this.chatInputEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -499,14 +523,60 @@ export class UIManager {
     }
   }
 
-  setPanel(panel: ActivePanel, chestStructure?: StructureState): void {
+  setSpyglassActive(active: boolean): void {
+    document.getElementById('spyglass-overlay')?.classList.toggle('hidden', !active);
+  }
+
+  updateSailingHud(boat: BoatState | null, windDirX: number, windDirZ: number): void {
+    const hud = document.getElementById('sailing-hud');
+    if (!hud) return;
+    if (!boat) {
+      hud.classList.add('hidden');
+      return;
+    }
+    hud.classList.remove('hidden');
+    const def = BOATS[boat.kind];
+    const nameEl = document.getElementById('sail-vessel-name');
+    if (nameEl) nameEl.textContent = `⛵ ${def.name}`;
+    const spdEl = document.getElementById('sail-speed');
+    if (spdEl) spdEl.textContent = `${(Math.abs(boat.speed) * 1.15).toFixed(1)} kt`;
+
+    // Wind alignment relative to boat heading (Three.js forward is -sin(yaw), -cos(yaw))
+    const fx = -Math.sin(boat.yaw);
+    const fz = -Math.cos(boat.yaw);
+    const windDot = fx * windDirX + fz * windDirZ;
+    const windEl = document.getElementById('sail-wind');
+    if (windEl) {
+      if (windDot > 0.35) {
+        windEl.textContent = '⛵ Tailwind +Boost';
+        windEl.className = 'sail-wind good';
+      } else if (windDot < -0.35) {
+        windEl.textContent = '⚠ Headwind (Row!)';
+        windEl.className = 'sail-wind warn';
+      } else {
+        windEl.textContent = '🌬 Crosswind +OK';
+        windEl.className = 'sail-wind';
+      }
+    }
+
+    const hpFill = document.getElementById('sail-hp-fill');
+    if (hpFill) hpFill.style.width = `${Math.max(0, Math.min(100, (boat.hp / boat.maxHp) * 100))}%`;
+    const hpVal = document.getElementById('sail-hp-val');
+    if (hpVal) hpVal.textContent = `${Math.ceil(boat.hp)}/${boat.maxHp}`;
+
+    hud.querySelectorAll<HTMLButtonElement>('.gear-btn').forEach((btn) => {
+      btn.classList.toggle('active', Number(btn.dataset.gear) === boat.throttle);
+    });
+
+    const cargoBtn = document.getElementById('btn-sail-cargo');
+    if (cargoBtn) cargoBtn.classList.toggle('hidden', def.cargoSlots <= 0);
+  }
+
+  setPanel(panel: ActivePanel, chestStructure?: StructureState, boatCargo?: BoatState): void {
     this.activePanel = panel;
     this.openChestId = panel === 'chest' && chestStructure ? chestStructure.id : null;
+    this.openBoatCargoId = panel === 'boat_cargo' && boatCargo ? boatCargo.id : null;
     this.selectedInvSlot = null;
-
-    if (panel !== 'build') {
-      // Keep build ghost active ONLY if user selected a build piece via B
-    }
 
     const mapModal = document.getElementById('map-modal')!;
     mapModal.classList.toggle('hidden', panel !== 'map');
@@ -518,16 +588,22 @@ export class UIManager {
     }
 
     this.panelContainer.classList.remove('hidden');
-    this.renderActivePanel(chestStructure);
+    this.renderActivePanel(chestStructure, boatCargo);
   }
 
-  refreshPanelIfOpen(chestStructure?: StructureState): void {
-    if (this.activePanel === 'inventory' || this.activePanel === 'crafting' || this.activePanel === 'build' || this.activePanel === 'chest') {
-      this.renderActivePanel(chestStructure);
+  refreshPanelIfOpen(chestStructure?: StructureState, boatCargo?: BoatState): void {
+    if (
+      this.activePanel === 'inventory' ||
+      this.activePanel === 'crafting' ||
+      this.activePanel === 'build' ||
+      this.activePanel === 'chest' ||
+      this.activePanel === 'boat_cargo'
+    ) {
+      this.renderActivePanel(chestStructure, boatCargo);
     }
   }
 
-  private renderActivePanel(chestStructure?: StructureState): void {
+  private renderActivePanel(chestStructure?: StructureState, boatCargo?: BoatState): void {
     const priv = this.lastPrivate;
     const self = this.lastSelf;
     if (!priv || !self) return;
@@ -615,6 +691,7 @@ export class UIManager {
         campfire: self.status.nearCampfire,
         workbench: self.status.nearWorkbench,
         furnace: self.status.nearFurnace,
+        cauldron: self.status.nearCauldron,
         runic_forge: self.status.nearRunicForge,
       };
 
@@ -649,7 +726,7 @@ export class UIManager {
         })
         .join('');
 
-      const tabs = ['all', 'hand', 'campfire', 'workbench', 'furnace', 'runic_forge'];
+      const tabs = ['all', 'hand', 'campfire', 'workbench', 'furnace', 'cauldron', 'runic_forge'];
       this.panelContainer.innerHTML = `
         <div class="modal-card modal-wide">
           <div class="modal-header">
@@ -686,6 +763,26 @@ export class UIManager {
       });
     } else if (this.activePanel === 'build') {
       const counts = this.countInventory(priv.inventory);
+      const boatKinds: BoatKind[] = ['raft', 'skiff', 'longship'];
+      const boatCards = boatKinds.map((kind) => {
+        const def = BOATS[kind];
+        const hasWb = !def.requiresWorkbench || self.status.nearWorkbench;
+        const hasMats = def.costs.every((c) => (counts[c.itemId] ?? 0) >= c.count);
+        const costsHtml = def.costs
+          .map((c) => {
+            const have = counts[c.itemId] ?? 0;
+            return `<span class="ing-chip ${have >= c.count ? 'ok' : 'miss'}">${ITEMS[c.itemId]?.name} ${have}/${c.count}</span>`;
+          })
+          .join('');
+        return `
+          <button class="build-card boat-card ${this.selectedBoatKind === kind ? 'active' : ''} ${hasWb && hasMats ? 'ready' : ''}" data-boat="${kind}">
+            <div class="build-title">⛵ ${this.esc(def.name)} <span class="boat-stat-pill">${def.fullSailSpeed} kt${def.cargoSlots > 0 ? ` · ${def.cargoSlots} Cargo` : ''}</span></div>
+            <div class="build-desc">${this.esc(def.description)}</div>
+            <div class="recipe-ings">${costsHtml}</div>
+            ${def.requiresWorkbench ? `<div class="wb-req ${hasWb ? 'ok' : ''}">Requires Workbench</div>` : ''}
+          </button>`;
+      }).join('');
+
       const cards = BUILDABLE_LIST.map((kind) => {
         const def = STRUCTURES[kind];
         const hasWb = !def.requiresWorkbench || self.status.nearWorkbench;
@@ -697,7 +794,7 @@ export class UIManager {
           })
           .join('');
         return `
-          <button class="build-card ${this.selectedBuildKind === kind ? 'active' : ''} ${hasWb && hasMats ? 'ready' : ''}" data-kind="${kind}">
+          <button class="build-card ${this.selectedBuildKind === kind && !this.selectedBoatKind ? 'active' : ''} ${hasWb && hasMats ? 'ready' : ''}" data-kind="${kind}">
             <div class="build-title">${this.esc(def.name)}</div>
             <div class="build-desc">${this.esc(def.description)}</div>
             <div class="recipe-ings">${costsHtml}</div>
@@ -708,10 +805,13 @@ export class UIManager {
       this.panelContainer.innerHTML = `
         <div class="modal-card modal-wide">
           <div class="modal-header">
-            <h2>Modular Base Building — Select Piece</h2>
+            <h2>Shipyard & Modular Base Building</h2>
             <button class="btn-close" id="btn-panel-close">✕</button>
           </div>
-          <p class="build-hint">Pick a blueprint below, then aim and <strong>Left-Click</strong> to place (snaps automatically!). Press <strong>[R]</strong> to rotate or <strong>Right-Click</strong> to exit build preview.</p>
+          <p class="build-hint">Pick a <strong>Boat</strong> to launch into coastal water, or a <strong>Structure</strong> to snap onto land/piers. Press <strong>[R]</strong> to rotate or <strong>Right-Click</strong> to cancel.</p>
+          <div class="build-section-hdr">⛵ Vessels & Ships (Place in Water)</div>
+          <div class="build-grid">${boatCards}</div>
+          <div class="build-section-hdr">🏗 Structures, Docks, Farming & Alchemy</div>
           <div class="build-grid">${cards}</div>
         </div>`;
 
@@ -719,13 +819,68 @@ export class UIManager {
         this.setPanel('none');
         this.actions.onResumeGame();
       });
-      this.panelContainer.querySelectorAll<HTMLButtonElement>('.build-card').forEach((b) => {
+      this.panelContainer.querySelectorAll<HTMLButtonElement>('.boat-card').forEach((b) => {
+        b.addEventListener('click', () => {
+          const bk = b.dataset.boat as BoatKind;
+          this.selectedBoatKind = bk;
+          this.actions.onSelectBuildKind(null);
+          this.actions.onSelectBoatKind(bk);
+          this.setPanel('none');
+          this.actions.onResumeGame();
+        });
+      });
+      this.panelContainer.querySelectorAll<HTMLButtonElement>('.build-card[data-kind]').forEach((b) => {
         b.addEventListener('click', () => {
           const k = b.dataset.kind as StructureKind;
+          this.selectedBoatKind = null;
           this.selectedBuildKind = k;
+          this.actions.onSelectBoatKind(null);
           this.actions.onSelectBuildKind(k);
           this.setPanel('none');
           this.actions.onResumeGame();
+        });
+      });
+    } else if (this.activePanel === 'boat_cargo' && boatCargo) {
+      const cargoSlots = boatCargo.chestSlots ?? [];
+      const renderGrid = (slots: (InventorySlot | null)[], side: 'inventory' | 'chest') =>
+        slots
+          .map((s, i) => {
+            const def = getItem(s?.itemId);
+            return `<button class="inv-slot" data-side="${side}" data-idx="${i}" title="${def ? this.esc(def.name) : 'Empty'}">
+              ${s ? `<div class="slot-icon">${getItemSvg(s.itemId)}</div>` : ''}
+              ${s && s.count > 1 ? `<span class="slot-count">${s.count}</span>` : ''}
+            </button>`;
+          })
+          .join('');
+
+      this.panelContainer.innerHTML = `
+        <div class="modal-card modal-wide">
+          <div class="modal-header">
+            <h2>⛵ ${this.esc(BOATS[boatCargo.kind].name)} Cargo Hold</h2>
+            <button class="btn-close" id="btn-panel-close">✕</button>
+          </div>
+          <p class="build-hint">Click any item to move cargo between your Backpack and your vessel's hold.</p>
+          <div class="chest-split">
+            <div>
+              <h3>Ship Cargo Hold (${cargoSlots.length} Slots)</h3>
+              <div class="inv-grid cols-4">${renderGrid(cargoSlots, 'chest')}</div>
+            </div>
+            <div>
+              <h3>Your Backpack</h3>
+              <div class="inv-grid cols-6">${renderGrid(priv.inventory, 'inventory')}</div>
+            </div>
+          </div>
+        </div>`;
+
+      this.panelContainer.querySelector('#btn-panel-close')?.addEventListener('click', () => {
+        this.setPanel('none');
+        this.actions.onResumeGame();
+      });
+      this.panelContainer.querySelectorAll<HTMLButtonElement>('.inv-slot').forEach((b) => {
+        b.addEventListener('click', () => {
+          const side = b.dataset.side as 'inventory' | 'chest';
+          const idx = Number(b.dataset.idx);
+          this.actions.onBoatChestTransfer(boatCargo.id, side, idx);
         });
       });
     } else if (this.activePanel === 'chest' && chestStructure) {

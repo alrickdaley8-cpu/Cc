@@ -288,20 +288,152 @@ export const STRUCTURES: Record<StructureKind, StructureDef> = {
     solidCollision: true,
     warmthRadius: 18,
   },
+  alchemy_cauldron: {
+    kind: 'alchemy_cauldron',
+    name: 'Alchemy Cauldron',
+    description: 'Bubbling iron pot for brewing Sunfire Elixirs, Sea-Wind Tonics & Seafarer Chowder.',
+    category: 'stations',
+    maxHp: 260,
+    costs: [
+      { itemId: 'stone', count: 8 },
+      { itemId: 'copper_ingot', count: 2 },
+      { itemId: 'wood', count: 6 },
+    ],
+    requiresWorkbench: true,
+    snapGroup: 'free',
+    width: 1.5,
+    height: 1.2,
+    depth: 1.5,
+    solidCollision: true,
+    warmthRadius: 6,
+    stationRadius: 8,
+  },
+  dock_pier: {
+    kind: 'dock_pier',
+    name: 'Harbor Dock Pier',
+    description: 'Sturdy timber pilings & decking that can be built directly over shallow coastal water!',
+    category: 'structure',
+    maxHp: 380,
+    costs: [
+      { itemId: 'wood', count: 8 },
+      { itemId: 'rope', count: 1 },
+    ],
+    snapGroup: 'foundation',
+    width: BUILD_GRID,
+    height: 1.2,
+    depth: BUILD_GRID,
+    solidCollision: false,
+  },
+  lighthouse_beacon: {
+    kind: 'lighthouse_beacon',
+    name: 'Harbor Lighthouse',
+    description: 'Sweeping golden rotating beam visible across the entire archipelago at night!',
+    category: 'utility',
+    maxHp: 950,
+    costs: [
+      { itemId: 'stone', count: 22 },
+      { itemId: 'wood', count: 12 },
+      { itemId: 'copper_ingot', count: 3 },
+      { itemId: 'resin', count: 6 },
+    ],
+    requiresWorkbench: true,
+    snapGroup: 'free',
+    width: 2.8,
+    height: 9.2,
+    depth: 2.8,
+    solidCollision: true,
+    warmthRadius: 14,
+  },
+  planter_box: {
+    kind: 'planter_box',
+    name: 'Garden Planter Box',
+    description: 'Cultivates ripe Sunberries & golden Sunblooms right at camp! Press [E] to harvest.',
+    category: 'utility',
+    maxHp: 180,
+    costs: [
+      { itemId: 'wood', count: 8 },
+      { itemId: 'fiber', count: 6 },
+      { itemId: 'berries', count: 2 },
+    ],
+    snapGroup: 'free',
+    width: 1.8,
+    height: 0.75,
+    depth: 1.2,
+    solidCollision: false,
+  },
+  windmill: {
+    kind: 'windmill',
+    name: 'Coastal Windmill',
+    description: 'Tall timber tower with rotating canvas sails that align with the live archipelago wind.',
+    category: 'utility',
+    maxHp: 620,
+    costs: [
+      { itemId: 'wood', count: 20 },
+      { itemId: 'stone', count: 10 },
+      { itemId: 'fiber', count: 12 },
+    ],
+    requiresWorkbench: true,
+    snapGroup: 'free',
+    width: 2.6,
+    height: 7.4,
+    depth: 2.6,
+    solidCollision: true,
+  },
+  camp_banner: {
+    kind: 'camp_banner',
+    name: 'Voyager Banner',
+    description: 'Fluttering coastal cloth banner marking your harbor, camp, or conquered island.',
+    category: 'utility',
+    maxHp: 160,
+    costs: [
+      { itemId: 'wood', count: 4 },
+      { itemId: 'fiber', count: 6 },
+    ],
+    snapGroup: 'free',
+    width: 0.8,
+    height: 4.2,
+    depth: 0.8,
+    solidCollision: false,
+  },
+  tiki_brazier: {
+    kind: 'tiki_brazier',
+    name: 'Harbor Brazier',
+    description: 'Blazing iron fire bowl that illuminates docks, beaches, and keeps sea chill away.',
+    category: 'utility',
+    maxHp: 240,
+    costs: [
+      { itemId: 'stone', count: 6 },
+      { itemId: 'wood', count: 4 },
+      { itemId: 'resin', count: 3 },
+    ],
+    snapGroup: 'free',
+    width: 1.0,
+    height: 1.7,
+    depth: 1.0,
+    solidCollision: true,
+    warmthRadius: 10.5,
+  },
 };
 
 export const BUILDABLE_LIST: StructureKind[] = [
   'campfire',
   'workbench',
+  'alchemy_cauldron',
+  'dock_pier',
   'wood_foundation',
   'wood_wall',
   'wood_doorway',
   'wood_roof',
   'wood_stairs',
+  'planter_box',
   'storage_chest',
   'bedroll',
   'rain_collector',
   'lantern_post',
+  'tiki_brazier',
+  'camp_banner',
+  'windmill',
+  'lighthouse_beacon',
   'spike_barricade',
   'stone_wall',
   'furnace',
@@ -327,10 +459,10 @@ export function computeSnappedPlacement(
   let bestRotY = desiredRotY;
   let snapped = false;
 
-  // Raise free items placed atop a foundation
+  // Raise free items placed atop a foundation or dock pier
   if (def.snapGroup === 'free') {
     for (const s of structures) {
-      if (s.kind === 'wood_foundation') {
+      if (s.kind === 'wood_foundation' || s.kind === 'dock_pier') {
         const dx = Math.abs(rawPos.x - s.x);
         const dz = Math.abs(rawPos.z - s.z);
         if (dx < BUILD_GRID * 0.5 && dz < BUILD_GRID * 0.5) {
@@ -345,7 +477,7 @@ export function computeSnappedPlacement(
 
   if (def.snapGroup === 'foundation') {
     for (const s of structures) {
-      if (s.kind !== 'wood_foundation') continue;
+      if (s.kind !== 'wood_foundation' && s.kind !== 'dock_pier') continue;
       const cos = Math.cos(s.rotY);
       const sin = Math.sin(s.rotY);
       const offsets: [number, number][] = [
@@ -369,11 +501,12 @@ export function computeSnappedPlacement(
       }
     }
     if (!snapped) {
-      bestY = terrainHeightFn(rawPos.x, rawPos.z) + 0.25;
+      const th = terrainHeightFn(rawPos.x, rawPos.z);
+      bestY = kind === 'dock_pier' ? Math.max(0.55, th + 0.35) : th + 0.25;
     }
   } else if (def.snapGroup === 'wall') {
     for (const s of structures) {
-      if (s.kind !== 'wood_foundation') continue;
+      if (s.kind !== 'wood_foundation' && s.kind !== 'dock_pier') continue;
       const cos = Math.cos(s.rotY);
       const sin = Math.sin(s.rotY);
       const half = BUILD_GRID * 0.5;

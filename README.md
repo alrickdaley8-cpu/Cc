@@ -24,8 +24,11 @@ That means **every** GitHub Pages & preview method works immediately:
 - **Cross-Device Responsive UI & Controls:**
   - **Desktop:** Full Pointer-Lock camera (plus Right-Drag fallback), WASD movement, scroll/number hotbar, keyboard shortcuts.
   - **Mobile & Tablet (Portrait & Landscape):** `100dvh` + safe-area insets, dynamic portrait vertical FOV, adaptive GPU budget, simultaneous multi-touch virtual analog joystick (auto-sprint at outer rim), right-side touch-drag camera look, ergonomic right-thumb action buttons (`ACT`, contextual `USE`, `JUMP`, `ROLL`, build `Rotate`/`Cancel`), tap-friendly quick-bar & clickable minimap.
-- **Deterministic 360m × 360m Multi-Biome Archipelago:** 7 distinct biomes (*Emerald Meadows, Whispering Pines, Sunlit Palms, Autumn Ridge, Mossy Wetlands, Misty Crags, Snowcap Peak*), custom PBR splat terrain, GLSL water with depth absorption/Fresnel/caustics/foam, Rayleigh/Mie sky, aurora borealis, volumetric weather, instanced wind-animated grass, and landmarks (*Sanctuary Hearth*, *Crystal Spring*, *Ancient Watchtower*).
-- **Complete Survival Loop:** 5 vitals (*Health, Stamina, Hunger, Thirst, Warmth*), 42 items, 26 crafting recipes across *Hand / Campfire / Workbench / Forge*, 16 snapped building pieces, shared chests, wildlife + nocturnal *Shadow Stalkers*, `[AI]` camp allies, and procedural Web Audio.
+- **Deterministic 440m × 440m Archipelago + Explorable Outer Islands:** Sail across open ocean from the South Harbor Jetty to **Shipwreck Coral Atoll**, **Volcanic Obsidian Isle** (home of the *Volcanic Cinder Golem* boss), and **Sea-Arch Sanctuary**. Enhanced GLSL ocean shader with synced 4-wave displacement, subsurface crest glow, seabed caustics, and crest whitecaps, plus soaring coastal seagulls, glowing fireflies, bioluminescent coral reefs, and volumetric sun-shaft god rays.
+- **Craftable & Sailable Boats (Real Wave Buoyancy & Wind Physics):**
+  - **Timber Raft** (Starter & early-game coastal craft, moored at the South Harbor Jetty), **Outrigger Skiff** (fast coastal vessel with 4-slot cargo hold), and **Viking Dragon Longship** (high-HP ocean voyager with carved dragon prow, twin lanterns, ramming damage, and 12-slot cargo hold).
+  - Real GPU/CPU-synced 4-probe wave buoyancy, turn heel, billowing sails, Kelvin wake foam, wind-angle sailing efficiency (*Tailwind / Crosswind / Headwind*), 5 throttle gears (`REV / STOP / ROW / HALF / FULL`), and onboard cargo transfers (`[F]`).
+- **Expanded Survival, Fishing, Farming & Alchemy:** 5 vitals, 62+ items, 38+ crafting & brewing recipes (*Hand / Campfire / Workbench / Furnace / Alchemy Cauldron / Runic Forge*), 23 snapped building pieces (*Wooden Dock Piers, Rotating Lighthouse Beacons, Planter Boxes, Alchemy Cauldrons, Spinning Windmills, Tiki Braziers, Camp Banners*), interactive **Bamboo Fishing Rod** with 3D floating bobber, **Brass Spyglass** 3× optical zoom, new creatures (*Giant Reef Crabs, Ocean Sea Serpents, Volcanic Cinder Golem*), `[AI]` camp allies, and procedural Web Audio.
 
 ## Architecture
 
@@ -60,4 +63,6 @@ npm start        # Runs production multiplayer server + client at http://localho
 | Inventory / Crafting / Build / Map | `Tab` / `C` / `B` / `M` | Top-right Quick Toolbar & Tap Minimap |
 | Rotate / Cancel Build | `R` / Right Click | On-screen `↻ Rotate` / `✕ Cancel` pills |
 | Camera (3rd / 1st) | `V` | `👁` Quick Button |
+| Board / Disembark Boat & Sail | `E` to board/exit • `W/S` Sail Gears • `A/D` Rudder • `F` Ship Cargo | `USE` to board • Joystick / HUD Gear Buttons • Cargo Button |
+| Fish / Spyglass Zoom | Equip Fishing Rod or Spyglass + Left Click | Equip + Tap/Hold `ACT` |
 | Chat Commands | `Enter` (`/time day`, `/time dusk`, `/weather rain`) | `💬` Quick Button |

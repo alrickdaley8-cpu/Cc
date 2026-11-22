@@ -2,6 +2,7 @@ import {
   HALF_WORLD,
   WORLD_SIZE,
   WorldGenerator,
+  type BoatState,
   type LandmarkInfo,
   type PlayerState,
   type StructureState,
@@ -88,7 +89,8 @@ export class MinimapRenderer {
     localId: string,
     players: PlayerState[],
     structures: StructureState[],
-    landmarks: LandmarkInfo[]
+    landmarks: LandmarkInfo[],
+    boats: BoatState[] = []
   ): void {
     const ctx = this.hudCanvas.getContext('2d');
     if (!ctx) return;
@@ -129,8 +131,27 @@ export class MinimapRenderer {
     // Structures
     for (const s of structures) {
       const [sx, sy] = toHud(s.x, s.z);
-      ctx.fillStyle = s.kind === 'campfire' ? '#fb923c' : s.kind === 'watchtower_beacon' ? '#2dd4bf' : '#e2e8f0';
+      ctx.fillStyle = s.kind === 'campfire' ? '#fb923c' : s.kind === 'lighthouse_beacon' || s.kind === 'watchtower_beacon' ? '#fde047' : '#e2e8f0';
       ctx.fillRect(sx - 2, sy - 2, 4, 4);
+    }
+
+    // Boats (crisp cyan sail triangles)
+    for (const b of boats) {
+      const [bx, by] = toHud(b.x, b.z);
+      ctx.save();
+      ctx.translate(bx, by);
+      ctx.rotate(-b.yaw + Math.PI);
+      ctx.fillStyle = '#38bdf8';
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(0, -5.5);
+      ctx.lineTo(4.2, 4.5);
+      ctx.lineTo(-4.2, 4.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
     }
 
     // Other players
@@ -170,7 +191,8 @@ export class MinimapRenderer {
     localId: string,
     players: PlayerState[],
     structures: StructureState[],
-    landmarks: LandmarkInfo[]
+    landmarks: LandmarkInfo[],
+    boats: BoatState[] = []
   ): void {
     const ctx = this.fullCanvas.getContext('2d');
     if (!ctx) return;
@@ -208,8 +230,27 @@ export class MinimapRenderer {
     // Structures
     for (const s of structures) {
       const [sx, sy] = this.worldToMap(s.x, s.z, size);
-      ctx.fillStyle = s.kind === 'campfire' ? '#f97316' : '#f8fafc';
+      ctx.fillStyle = s.kind === 'campfire' ? '#f97316' : s.kind === 'lighthouse_beacon' ? '#fde047' : '#f8fafc';
       ctx.fillRect(sx - 2.5, sy - 2.5, 5, 5);
+    }
+
+    // Boats
+    for (const b of boats) {
+      const [bx, by] = this.worldToMap(b.x, b.z, size);
+      ctx.save();
+      ctx.translate(bx, by);
+      ctx.rotate(-b.yaw + Math.PI);
+      ctx.fillStyle = '#38bdf8';
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(0, -7);
+      ctx.lineTo(5.5, 5.5);
+      ctx.lineTo(-5.5, 5.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
     }
 
     // Players

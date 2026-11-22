@@ -10,8 +10,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <title>WILDREACH — 3D Multiplayer Survival</title>
-    <script type="module" crossorigin src="./assets/index-DDGkShLH.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-Dv4c9ihC.css">
+    <script type="module" crossorigin src="./assets/index-leTdH19Y.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CrfC7OVC.css">
   </head>
   <body>
     <canvas id="game-canvas"></canvas>
@@ -21,6 +21,12 @@
 
     <!-- Screen-edge immersive vignette (low HP, hit flash, chilled frost, underwater, campfire warmth) -->
     <div id="screen-vignette"></div>
+
+    <!-- Brass Spyglass Optical Zoom Reticle -->
+    <div id="spyglass-overlay" class="spyglass-overlay hidden">
+      <div class="spyglass-ring"></div>
+      <div class="spyglass-label">3× MARINER SPYGLASS — RELEASE TO ZOOM OUT</div>
+    </div>
 
     <!-- Live-3D Atmospheric Title & Lobby Overlay -->
     <div id="title-overlay">
@@ -183,6 +189,31 @@
         </div>
       </div>
 
+      <!-- Sailing Helm HUD (visible while piloting any Boat / Vessel) -->
+      <div id="sailing-hud" class="sailing-hud hidden">
+        <div class="sail-top">
+          <span id="sail-vessel-name" class="sail-name">⛵ Timber Raft</span>
+          <span id="sail-speed" class="sail-speed">0.0 kt</span>
+          <span id="sail-wind" class="sail-wind">🌬 Crosswind</span>
+        </div>
+        <div class="sail-hp-row">
+          <span>HULL</span>
+          <div class="vital-track"><div id="sail-hp-fill" class="vital-fill fill-stamina" style="width:100%"></div></div>
+          <span id="sail-hp-val">160/160</span>
+        </div>
+        <div class="sail-gears">
+          <button class="gear-btn" data-gear="-1" type="button">REV</button>
+          <button class="gear-btn active" data-gear="0" type="button">STOP</button>
+          <button class="gear-btn" data-gear="1" type="button">ROW</button>
+          <button class="gear-btn" data-gear="2" type="button">HALF</button>
+          <button class="gear-btn" data-gear="3" type="button">FULL</button>
+        </div>
+        <div class="sail-actions">
+          <button id="btn-sail-cargo" class="tbtn-pill hidden" type="button">📦 Cargo [F]</button>
+          <button id="btn-sail-disembark" class="tbtn-pill" type="button">⚓ Disembark [E]</button>
+        </div>
+      </div>
+
       <!-- Bottom-Center Hotbar -->
       <div class="hotbar-wrap">
         <div id="equipped-label" class="equipped-label">Stone Hatchet</div>
@@ -242,8 +273,9 @@
           <span><i style="background:#4ade80"></i> Survivors</span>
           <span><i style="background:#7dd3fc"></i> [AI] Camp Ally</span>
           <span><i style="background:#f97316"></i> Campfire</span>
+          <span><i style="background:#38bdf8"></i> Boats</span>
           <span><i style="background:#2dd4bf"></i> Sanctuary</span>
-          <span><i style="background:#38bdf8"></i> Fresh Spring</span>
+          <span><i style="background:#fbbf24"></i> Outer Isles</span>
         </div>
       </div>
     </div>

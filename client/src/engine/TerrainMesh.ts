@@ -18,7 +18,7 @@ export function buildTerrain(
   world: WorldGenerator,
   textures: ProceduralTextureSet
 ): TerrainBuildResult {
-  const segs = 220;
+  const segs = 256;
   const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, segs, segs);
   geo.rotateX(-Math.PI / 2);
 

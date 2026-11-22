@@ -73,7 +73,42 @@ export function getItemSvg(itemId: string): string {
     case 'leather_armor':
     case 'iron_armor':
     case 'runic_armor':
+    case 'sea_scale_armor':
       return `<svg viewBox="0 0 32 32"><path d="M9 6 L13 9 L19 9 L23 6 L27 11 L24 15 L23 26 L9 26 L8 15 L5 11 Z" fill="${col}" stroke="#1e293b" stroke-width="2"/></svg>`;
+    case 'sailcloth':
+      return `<svg viewBox="0 0 32 32"><path d="M8 5 C19 8, 24 16, 22 26 L8 24 Z" fill="#f5ead6" stroke="#8c7a5b" stroke-width="2"/><line x1="8" y1="4" x2="8" y2="28" stroke="#6b4423" stroke-width="2.5"/></svg>`;
+    case 'fishing_rod':
+      return `<svg viewBox="0 0 32 32"><path d="M5 27 Q16 14 26 5" fill="none" stroke="#c89b55" stroke-width="2.8" stroke-linecap="round"/><path d="M26 5 Q27 16 24 23" fill="none" stroke="#e2e8f0" stroke-width="1.3"/><circle cx="24" cy="24" r="3" fill="#ef4444" stroke="#ffffff" stroke-width="1.2"/></svg>`;
+    case 'spyglass':
+      return `<svg viewBox="0 0 32 32"><line x1="6" y1="25" x2="25" y2="7" stroke="#d97706" stroke-width="5.5" stroke-linecap="round"/><line x1="12" y1="19" x2="21" y2="11" stroke="#f59e0b" stroke-width="3.5"/><circle cx="25" cy="7" r="3" fill="#38bdf8" stroke="#92400e" stroke-width="1.5"/></svg>`;
+    case 'harpoon_spear':
+    case 'volcanic_greataxe':
+      return `<svg viewBox="0 0 32 32"><line x1="5" y1="27" x2="24" y2="8" stroke="#6b4423" stroke-width="3.2" stroke-linecap="round"/><polygon points="27,5 25,14 21,11 18,7" fill="${col}" stroke="#1e293b" stroke-width="1.6"/></svg>`;
+    case 'raw_fish':
+    case 'grilled_fish':
+    case 'golden_snapper':
+    case 'seafarer_chowder':
+      return `<svg viewBox="0 0 32 32"><path d="M6 16 C11 9, 21 9, 25 16 C21 23, 11 23, 6 16Z" fill="${col}" stroke="#1e293b" stroke-width="1.8"/><polygon points="24,16 30,11 29,21" fill="${col}"/><circle cx="11" cy="14.5" r="1.5" fill="#0f172a"/></svg>`;
+    case 'sea_pearl':
+      return `<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="9.5" fill="#e0f2fe" stroke="#38bdf8" stroke-width="2"/><circle cx="13" cy="12" r="3" fill="#ffffff" opacity="0.9"/></svg>`;
+    case 'coral_shard':
+      return `<svg viewBox="0 0 32 32"><path d="M16 27 V12 M16 18 L9 10 M16 16 L23 9 M12 13 L11 7 M20 12 L22 6" stroke="#f472b6" stroke-width="3.2" stroke-linecap="round"/></svg>`;
+    case 'sunbloom':
+      return `<svg viewBox="0 0 32 32"><circle cx="16" cy="14" r="7" fill="#fde047" stroke="#d97706" stroke-width="2"/><circle cx="16" cy="14" r="3" fill="#f97316"/><line x1="16" y1="21" x2="16" y2="28" stroke="#4d7c0f" stroke-width="2.6"/></svg>`;
+    case 'sunken_gold':
+      return `<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="10" fill="#facc15" stroke="#b45309" stroke-width="2"/><circle cx="16" cy="16" r="6" fill="none" stroke="#fef08a" stroke-width="1.4"/></svg>`;
+    case 'crab_claw':
+      return `<svg viewBox="0 0 32 32"><path d="M8 24 C8 14, 16 7, 25 9 C22 14, 21 16, 25 19 C19 24, 14 26, 8 24Z" fill="#e11d48" stroke="#881337" stroke-width="2"/></svg>`;
+    case 'serpent_scale':
+      return `<svg viewBox="0 0 32 32"><polygon points="16,4 26,15 16,28 6,15" fill="#06b6d4" stroke="#164e63" stroke-width="2"/><polygon points="16,8 22,15 16,23 10,15" fill="#67e8f9" opacity="0.65"/></svg>`;
+    case 'volcanic_core':
+      return `<svg viewBox="0 0 32 32"><polygon points="16,3 25,11 22,26 10,26 7,11" fill="#f97316" stroke="#7c2d12" stroke-width="2"/><circle cx="16" cy="15" r="4" fill="#fef08a"/></svg>`;
+    case 'swift_tonic':
+    case 'frost_brew':
+    case 'berserk_elixir':
+      return `<svg viewBox="0 0 32 32"><rect x="13" y="4" width="6" height="5" fill="#cbd5e1"/><path d="M13 9 L7 22 C6 25, 9 27, 16 27 C23 27, 26 25, 25 22 L19 9 Z" fill="${col}" stroke="#1e293b" stroke-width="2"/><circle cx="14" cy="19" r="2.2" fill="#ffffff" opacity="0.75"/></svg>`;
+    case 'berry_seeds':
+      return `<svg viewBox="0 0 32 32"><ellipse cx="11" cy="17" rx="3" ry="5" fill="#84cc16" stroke="#365314" stroke-width="1.5"/><ellipse cx="18" cy="13" rx="3" ry="5" fill="#a3e635" stroke="#365314" stroke-width="1.5"/><ellipse cx="21" cy="21" rx="3" ry="5" fill="#65a30d" stroke="#365314" stroke-width="1.5"/></svg>`;
     default:
       return `<svg viewBox="0 0 32 32"><rect x="6" y="8" width="20" height="16" rx="3" fill="${col}" stroke="#1e293b" stroke-width="2"/><circle cx="16" cy="16" r="3.5" fill="#ffffff" opacity="0.6"/></svg>`;
   }

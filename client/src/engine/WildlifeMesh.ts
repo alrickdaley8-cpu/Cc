@@ -164,7 +164,7 @@ export class WildlifeManager {
         g.add(leg);
         legs.push(leg);
       }
-    } else {
+    } else if (w.kind === 'stalker') {
       // Shadow Stalker — eerie hovering night predator with horned crown & blazing eyes
       const shadowMat = new THREE.MeshStandardMaterial({
         color: '#171124',
@@ -194,11 +194,96 @@ export class WildlifeManager {
       const aura = new THREE.PointLight('#a855f7', 2.8, 9, 1.8);
       aura.position.set(0, 1.8, 0);
       g.add(aura);
+    } else if (w.kind === 'crab') {
+      const shellMat = new THREE.MeshStandardMaterial({ color: '#e11d48', roughness: 0.45 });
+      const clawMat = new THREE.MeshStandardMaterial({ color: '#fb7185', roughness: 0.5 });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.34, 0.72), shellMat);
+      body.position.y = 0.32;
+      body.castShadow = true;
+      g.add(body);
+      for (const sx of [-0.52, 0.52]) {
+        const claw = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.22, 0.45), clawMat);
+        claw.position.set(sx, 0.36, 0.48);
+        g.add(claw);
+        for (let l = -1; l <= 1; l++) {
+          const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 0.45, 5), shellMat);
+          leg.position.set(sx * 1.05, 0.2, l * 0.22);
+          leg.rotation.z = sx > 0 ? -0.7 : 0.7;
+          g.add(leg);
+          legs.push(leg);
+        }
+      }
+      head.position.set(0, 0.52, 0.25);
+      g.add(head);
+    } else if (w.kind === 'serpent') {
+      const scaleMat = new THREE.MeshStandardMaterial({
+        color: '#0e7490',
+        emissive: '#0891b2',
+        emissiveIntensity: 0.35,
+        roughness: 0.32,
+      });
+      const finMat = new THREE.MeshBasicMaterial({ color: '#22d3ee' });
+      // Multi-segment sinuous Ocean Sea Serpent!
+      for (let i = 0; i < 6; i++) {
+        const r = Math.max(0.24, 0.68 - i * 0.08);
+        const seg = new THREE.Mesh(new THREE.SphereGeometry(r, 9, 8), scaleMat);
+        seg.position.set(0, 0.45 + (i % 2) * 0.38, -i * 1.15);
+        seg.castShadow = true;
+        const fin = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.65, 4), finMat);
+        fin.position.set(0, r + 0.22, 0);
+        seg.add(fin);
+        g.add(seg);
+        legs.push(seg); // reuse legs array for serpentine undulation!
+      }
+      head.position.set(0, 1.35, 1.05);
+      const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.62, 1.35), scaleMat);
+      head.add(jaw);
+      for (const sx of [-0.3, 0.3]) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 6), new THREE.MeshBasicMaterial({ color: '#fde047' }));
+        eye.position.set(sx, 0.14, 0.52);
+        head.add(eye);
+      }
+      g.add(head);
+    } else if (w.kind === 'cinder_golem') {
+      const obsMat = new THREE.MeshStandardMaterial({ color: '#1c1917', roughness: 0.65, metalness: 0.3 });
+      const lavaMat = new THREE.MeshBasicMaterial({ color: '#f97316' });
+      const torso = new THREE.Mesh(new THREE.DodecahedronGeometry(1.25, 0), obsMat);
+      torso.position.y = 2.15;
+      torso.castShadow = true;
+      const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0), lavaMat);
+      core.position.set(0, 2.15, 0.72);
+      g.add(torso, core);
+      for (const sx of [-1.25, 1.25]) {
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.65, 1.85, 0.65), obsMat);
+        arm.position.set(sx, 1.75, 0.2);
+        arm.castShadow = true;
+        g.add(arm);
+        legs.push(arm);
+      }
+      for (const sx of [-0.58, 0.58]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.58, 1.25, 0.62), obsMat);
+        leg.position.set(sx, 0.62, 0);
+        g.add(leg);
+        legs.push(leg);
+      }
+      head.position.set(0, 3.45, 0.15);
+      const helm = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.78, 0.85), obsMat);
+      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.18, 0.45), lavaMat);
+      visor.position.set(0, 0.05, 0.32);
+      head.add(helm, visor);
+      g.add(head);
+      const glow = new THREE.PointLight('#ff6d00', 4.5, 16, 1.6);
+      glow.position.y = 2.4;
+      g.add(glow);
     }
 
     // Crisp mini world HP bar (visible only when injured)
     const hpBarGroup = new THREE.Group();
-    hpBarGroup.position.set(0, w.kind === 'stalker' ? 2.95 : 1.95, 0);
+    hpBarGroup.position.set(
+      0,
+      w.kind === 'cinder_golem' ? 4.4 : w.kind === 'stalker' ? 2.95 : w.kind === 'serpent' ? 2.6 : 1.95,
+      0
+    );
     const bg = new THREE.Mesh(
       new THREE.PlaneGeometry(1.16, 0.14),
       new THREE.MeshBasicMaterial({ color: '#0f172a', side: THREE.DoubleSide })
@@ -243,6 +328,12 @@ export class WildlifeManager {
       if (vis.kind === 'stalker') {
         vis.group.position.y += Math.sin(elapsed * 4 + vis.targetPos.x) * 0.14;
         vis.head.rotation.x = vis.state.attackTime > 0 ? 0.5 : Math.sin(elapsed * 3) * 0.1;
+      } else if (vis.kind === 'serpent') {
+        for (let i = 0; i < vis.legs.length; i++) {
+          vis.legs[i].position.x = Math.sin(elapsed * 4.2 - i * 0.85) * 0.65;
+          vis.legs[i].position.y = 0.38 + Math.cos(elapsed * 3.2 - i * 0.9) * 0.32;
+        }
+        vis.head.position.x = Math.sin(elapsed * 4.2 + 0.6) * 0.45;
       } else if (vis.state.speed > 0.3) {
         const stride = Math.sin(elapsed * (vis.state.speed * 2.1));
         for (let i = 0; i < vis.legs.length; i++) {

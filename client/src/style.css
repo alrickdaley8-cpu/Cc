@@ -1045,3 +1045,150 @@ html, body {
   .equipped-label { display: none; }
   .hb-slot { width: 36px; height: 36px; }
 }
+
+/* ==================== SAILING HELM HUD ==================== */
+.sailing-hud {
+  position: fixed;
+  left: 50%;
+  bottom: calc(104px + var(--safe-bottom));
+  transform: translateX(-50%);
+  width: min(370px, calc(100vw - 24px));
+  background: linear-gradient(155deg, rgba(11, 21, 35, 0.88), rgba(14, 30, 48, 0.82));
+  border: 1px solid rgba(56, 189, 248, 0.38);
+  border-radius: 16px;
+  padding: 10px 14px;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+  z-index: 36;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.sail-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.sail-name { color: #e0f2fe; letter-spacing: 0.02em; }
+.sail-speed {
+  color: #38bdf8;
+  font-variant-numeric: tabular-nums;
+  background: rgba(56, 189, 248, 0.14);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+.sail-wind {
+  font-size: 11px;
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, 0.14);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.sail-wind.good { color: #6ee7b7; background: rgba(16, 185, 129, 0.2); }
+.sail-wind.warn { color: #fca5a5; background: rgba(239, 68, 68, 0.22); }
+.sail-hp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  color: #94a3b8;
+  font-weight: 700;
+}
+.sail-gears {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+}
+.gear-btn {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.72);
+  color: #cbd5e1;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 5px 4px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.gear-btn:hover { border-color: rgba(56, 189, 248, 0.65); color: #ffffff; }
+.gear-btn.active {
+  background: linear-gradient(135deg, #0284c7, #0ea5e9);
+  border-color: #7dd3fc;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(14, 165, 233, 0.45);
+}
+.sail-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* ==================== BRASS SPYGLASS RETICLE ==================== */
+.spyglass-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 44;
+  background: radial-gradient(circle at center, transparent 34%, rgba(6, 10, 16, 0.88) 44%, rgba(4, 7, 12, 0.98) 70%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.spyglass-ring {
+  width: min(70vmin, 520px);
+  height: min(70vmin, 520px);
+  border-radius: 50%;
+  border: 4px solid rgba(217, 119, 6, 0.85);
+  box-shadow: inset 0 0 36px rgba(0, 0, 0, 0.65), 0 0 24px rgba(245, 158, 11, 0.35);
+  position: relative;
+}
+.spyglass-ring::before,
+.spyglass-ring::after {
+  content: '';
+  position: absolute;
+  background: rgba(251, 191, 36, 0.4);
+}
+.spyglass-ring::before { left: 50%; top: 10%; bottom: 10%; width: 1px; }
+.spyglass-ring::after { top: 50%; left: 10%; right: 10%; height: 1px; }
+.spyglass-label {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #fde68a;
+  background: rgba(10, 15, 24, 0.78);
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
+/* ==================== SHIPYARD BUILD HEADERS ==================== */
+.build-section-hdr {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+  margin: 12px 0 6px;
+}
+.boat-card {
+  border-color: rgba(56, 189, 248, 0.34) !important;
+  background: linear-gradient(150deg, rgba(14, 34, 54, 0.82), rgba(15, 23, 42, 0.85)) !important;
+}
+.boat-stat-pill {
+  font-size: 10px;
+  font-weight: 700;
+  color: #bae6fd;
+  background: rgba(14, 165, 233, 0.25);
+  padding: 2px 6px;
+  border-radius: 999px;
+  margin-left: 6px;
+}
+

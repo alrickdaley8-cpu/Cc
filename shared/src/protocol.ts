@@ -1,5 +1,7 @@
 import type {
   AnimState,
+  BoatKind,
+  BoatState,
   ChatMessage,
   FloatingCombatEvent,
   LandmarkInfo,
@@ -76,6 +78,25 @@ export interface ChestTransferPayload {
   toIndex?: number;
 }
 
+export interface BoatBuildPayload {
+  kind: BoatKind;
+  x: number;
+  z: number;
+  rotY: number;
+}
+
+export interface BoatControlPayload {
+  throttle?: number; // explicit -1..3
+  throttleDelta?: number; // -1 or +1 step
+  steer: number; // -1..1
+}
+
+export interface BoatChestTransferPayload {
+  boatId: string;
+  from: 'inventory' | 'chest';
+  fromIndex: number;
+}
+
 export interface WorldInitPayload {
   playerId: string;
   room: RoomSummary;
@@ -85,6 +106,7 @@ export interface WorldInitPayload {
   privateState: LocalPlayerPrivateState;
   nodes: ResourceNodeState[];
   structures: StructureState[];
+  boats: BoatState[];
   wildlife: WildlifeState[];
   loot: LootDropState[];
   chatHistory: ChatMessage[];
@@ -94,6 +116,7 @@ export interface WorldSnapshotPayload {
   t: number;
   time: WorldTimeState;
   players: PlayerState[];
+  boats: BoatState[];
   wildlife: WildlifeState[];
   projectiles: ProjectileState[];
 }
@@ -113,6 +136,11 @@ export interface ClientToServerEvents {
   'player:build': (payload: BuildPlacePayload) => void;
   'player:demolish': (structureId: string) => void;
   'player:chestTransfer': (payload: ChestTransferPayload) => void;
+  'boat:build': (payload: BoatBuildPayload) => void;
+  'boat:board': (boatId: string | null) => void;
+  'boat:control': (payload: BoatControlPayload) => void;
+  'boat:chestTransfer': (payload: BoatChestTransferPayload) => void;
+  'player:fishCatch': (payload: { deepWater: boolean }) => void;
   'player:respawn': () => void;
   'player:togglePvp': () => void;
   'player:emote': (emote: string) => void;
@@ -129,6 +157,9 @@ export interface ServerToClientEvents {
   'structure:add': (structure: StructureState) => void;
   'structure:update': (structure: StructureState) => void;
   'structure:remove': (structureId: string) => void;
+  'boat:add': (boat: BoatState) => void;
+  'boat:update': (boat: BoatState) => void;
+  'boat:remove': (boatId: string) => void;
   'loot:add': (loot: LootDropState) => void;
   'loot:remove': (lootId: string) => void;
   'combat:event': (ev: FloatingCombatEvent) => void;

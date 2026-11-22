@@ -1,6 +1,7 @@
 import './style.css';
 import * as THREE from 'three';
 import {
+  BOATS,
   ITEMS,
   STRUCTURES,
   SWIM_DEPTH,
@@ -10,6 +11,8 @@ import {
   computeSnappedPlacement,
   getItem,
   type AnimState,
+  type BoatKind,
+  type BoatState,
   type LandmarkInfo,
   type LocalPlayerPrivateState,
   type PlayerState,
@@ -24,6 +27,8 @@ import { buildTerrain } from './engine/TerrainMesh';
 import { WaterMesh } from './engine/WaterMesh';
 import { EnvironmentManager } from './engine/Environment';
 import { StructureManager } from './engine/Structures';
+import { BoatManager } from './engine/BoatMesh';
+import { LivingWorldFX } from './engine/LivingWorldFX';
 import { CharacterVisual } from './engine/CharacterMesh';
 import { WildlifeManager } from './engine/WildlifeMesh';
 import { EffectsManager } from './engine/Effects';
@@ -60,6 +65,8 @@ class WildreachGame {
   private water: WaterMesh | null = null;
   private env: EnvironmentManager | null = null;
   private structures: StructureManager | null = null;
+  private boats: BoatManager | null = null;
+  private livingFX: LivingWorldFX | null = null;
   private wildlife: WildlifeManager | null = null;
   private effects: EffectsManager | null = null;
   private minimap: MinimapRenderer | null = null;
@@ -74,6 +81,7 @@ class WildreachGame {
   private privateState: LocalPlayerPrivateState | null = null;
   private nodeMap = new Map<string, ResourceNodeState>();
   private structureMap = new Map<string, StructureState>();
+  private boatMap = new Map<string, BoatState>();
   private landmarks: LandmarkInfo[] = [];
   private worldTime: WorldTimeState = {
     day: 1,
@@ -99,11 +107,27 @@ class WildreachGame {
   private hitFlash = 0;
   private localSwingTime = 0;
 
-  // Build preview state
+  // Build & Boat Placement preview state
   private activeBuildKind: StructureKind | null = null;
   private activeBuildFromSlot: number | undefined = undefined;
+  private activeBoatKind: BoatKind | null = null;
   private buildRotY = 0;
   private ghostPlacement: { x: number; y: number; z: number; rotY: number; valid: boolean; snapped: boolean } | null = null;
+  private boatGhostPos: { x: number; z: number; rotY: number; valid: boolean } | null = null;
+
+  // Sailing, Fishing & Spyglass runtime state
+  private sailGear: -1 | 0 | 1 | 2 | 3 = 0;
+  private sailGearCooldown = 0;
+  private boatCtrlTimer = 0;
+  private spyglassActive = false;
+  private fishing: {
+    active: boolean;
+    bobberX: number;
+    bobberZ: number;
+    timer: number;
+    biteWindow: number;
+    deepWater: boolean;
+  } = { active: false, bobberX: 0, bobberZ: 0, timer: 0, biteWindow: 0, deepWater: false };
 
   // Raycast targeting cache
   private raycaster = new THREE.Raycaster();
@@ -111,6 +135,7 @@ class WildreachGame {
   private aimNodeId: string | undefined;
   private aimWildlifeId: string | undefined;
   private aimStructureId: string | undefined;
+  private aimBoatId: string | undefined;
   private aimLootId: string | undefined;
   private aimPlayerId: string | undefined;
 
@@ -138,7 +163,7 @@ class WildreachGame {
       this.computeResponsiveFov(window.innerWidth, window.innerHeight),
       window.innerWidth / window.innerHeight,
       0.15,
-      620
+      820
     );
 
     this.textures = createProceduralTextures();
@@ -163,9 +188,38 @@ class WildreachGame {
       onSelectBuildKind: (kind) => {
         this.activeBuildKind = kind;
         this.activeBuildFromSlot = undefined;
+        if (kind) {
+          this.activeBoatKind = null;
+          this.boats?.updateGhost(null, 0, 0, 0, false);
+        }
       },
+      onSelectBoatKind: (kind) => {
+        this.activeBoatKind = kind;
+        if (kind) {
+          this.activeBuildKind = null;
+          this.activeBuildFromSlot = undefined;
+          this.structures?.updateGhost(null, 0, 0, 0, 0, false);
+        } else {
+          this.boats?.updateGhost(null, 0, 0, 0, false);
+        }
+      },
+      onSetSailGear: (gear) => {
+        this.sailGear = gear;
+        this.net.sendBoatControl({ steer: 0, throttle: gear });
+        this.audio.playSfx('ui');
+      },
+      onDisembarkBoat: () => {
+        const self = this.getLocalPlayerState();
+        if (self?.boatId) {
+          this.sailGear = 0;
+          this.net.sendBoardBoat(null);
+        }
+      },
+      onOpenBoatCargo: () => this.openActiveBoatCargo(),
       onChestTransfer: (stId, from, fromIdx) =>
         this.net.sendChestTransfer({ structureId: stId, from, fromIndex: fromIdx }),
+      onBoatChestTransfer: (boatId, from, fromIdx) =>
+        this.net.sendBoatChestTransfer({ boatId, from, fromIndex: fromIdx }),
       onSendChat: (text) => this.net.sendChat(text),
       onRespawn: () => this.net.sendRespawn(),
       onTogglePvp: () => this.net.sendTogglePvp(),
@@ -192,7 +246,9 @@ class WildreachGame {
       onCancelBuild: () => {
         this.activeBuildKind = null;
         this.activeBuildFromSlot = undefined;
+        this.activeBoatKind = null;
         this.structures?.updateGhost(null, 0, 0, 0, 0, false);
+        this.boats?.updateGhost(null, 0, 0, 0, false);
       },
       onOpenInventory: () => this.togglePanel('inventory'),
       onOpenCrafting: () => this.togglePanel('crafting'),
@@ -236,9 +292,11 @@ class WildreachGame {
           this.ui.setPanel('none');
           this.syncInputFlags();
           this.input.requestPointerLock();
-        } else if (this.activeBuildKind) {
+        } else if (this.activeBuildKind || this.activeBoatKind) {
           this.activeBuildKind = null;
+          this.activeBoatKind = null;
           this.structures?.updateGhost(null, 0, 0, 0, 0, false);
+          this.boats?.updateGhost(null, 0, 0, 0, false);
         } else if (this.inGame) {
           this.togglePanel('pause');
         }
@@ -246,6 +304,13 @@ class WildreachGame {
       onEmote: (emote) => {
         if (this.inGame) this.net.sendEmote(emote);
       },
+    });
+
+    // Hotkey [F] opens onboard boat cargo hold when sailing a Skiff or Longship
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyF' && this.inGame && this.ui.activePanel === 'none' && !this.ui.chatOpen) {
+        this.openActiveBoatCargo();
+      }
     });
 
     window.addEventListener('resize', () => {
@@ -275,6 +340,8 @@ class WildreachGame {
     if (this.water) this.scene.remove(this.water.mesh);
     if (this.env) this.scene.remove(this.env.root);
     if (this.structures) this.scene.remove(this.structures.group);
+    if (this.boats) this.scene.remove(this.boats.group);
+    if (this.livingFX) this.scene.remove(this.livingFX.group);
     if (this.wildlife) this.scene.remove(this.wildlife.group);
     if (this.effects) this.scene.remove(this.effects.group);
 
@@ -296,6 +363,8 @@ class WildreachGame {
     this.env.syncNodes(this.world.generateResourceNodes());
 
     this.structures = new StructureManager(this.scene, this.textures);
+    this.boats = new BoatManager(this.scene, this.world, this.textures);
+    this.livingFX = new LivingWorldFX(this.scene, this.world, this.textures);
     this.wildlife = new WildlifeManager(this.scene);
     this.effects = new EffectsManager(this.scene, this.textures);
 
@@ -331,7 +400,8 @@ class WildreachGame {
         onPrivateState: (priv) => {
           this.privateState = priv;
           this.ui.refreshPanelIfOpen(
-            this.ui.openChestId ? this.structureMap.get(this.ui.openChestId) : undefined
+            this.ui.openChestId ? this.structureMap.get(this.ui.openChestId) : undefined,
+            this.ui.openBoatCargoId ? this.boatMap.get(this.ui.openBoatCargoId) : undefined
           );
         },
         onNodeUpdate: (node) => {
@@ -357,6 +427,25 @@ class WildreachGame {
           this.structureMap.delete(id);
           this.structures?.remove(id);
           if (this.ui.openChestId === id) {
+            this.ui.setPanel('none');
+            this.syncInputFlags();
+          }
+        },
+        onBoatAdd: (boat) => {
+          this.boatMap.set(boat.id, boat);
+          this.boats?.addBoat(boat);
+        },
+        onBoatUpdate: (boat) => {
+          this.boatMap.set(boat.id, boat);
+          this.boats?.updateBoatState(boat);
+          if (this.ui.openBoatCargoId === boat.id) {
+            this.ui.refreshPanelIfOpen(undefined, boat);
+          }
+        },
+        onBoatRemove: (id) => {
+          this.boatMap.delete(id);
+          this.boats?.removeBoat(id);
+          if (this.ui.openBoatCargoId === id) {
             this.ui.setPanel('none');
             this.syncInputFlags();
           }
@@ -398,6 +487,10 @@ class WildreachGame {
       for (const s of init.structures) this.structureMap.set(s.id, s);
       this.structures?.syncAll(init.structures);
 
+      this.boatMap.clear();
+      for (const b of init.boats) this.boatMap.set(b.id, b);
+      this.boats?.syncAll(init.boats);
+
       this.wildlife?.sync(init.wildlife);
       this.effects?.syncLootAll(init.loot);
 
@@ -435,11 +528,17 @@ class WildreachGame {
     players: PlayerState[];
     wildlife: import('@wildreach/shared').WildlifeState[];
     projectiles: import('@wildreach/shared').ProjectileState[];
+    boats: BoatState[];
   }): void {
     this.worldTime = snap.time;
     this.allPlayers = snap.players;
     this.wildlife?.sync(snap.wildlife);
     this.effects?.syncProjectiles(snap.projectiles);
+    if (snap.boats) {
+      this.boatMap.clear();
+      for (const b of snap.boats) this.boatMap.set(b.id, b);
+      this.boats?.syncAll(snap.boats);
+    }
 
     const seenRemote = new Set<string>();
     for (const p of snap.players) {
@@ -565,7 +664,8 @@ class WildreachGame {
           this.localId,
           this.allPlayers,
           Array.from(this.structureMap.values()),
-          this.landmarks
+          this.landmarks,
+          Array.from(this.boatMap.values())
         );
       }
     }
@@ -590,9 +690,40 @@ class WildreachGame {
     return this.allPlayers.find((p) => p.id === this.localId);
   }
 
+  private openActiveBoatCargo(): void {
+    const self = this.getLocalPlayerState();
+    if (!self?.boatId) return;
+    const boat = this.boatMap.get(self.boatId);
+    if (!boat || BOATS[boat.kind].cargoSlots <= 0) {
+      this.ui.showToast('This vessel has no cargo hold. Craft a Skiff or Longship!', 'info');
+      return;
+    }
+    this.ui.setPanel('boat_cargo', undefined, boat);
+    this.syncInputFlags();
+    this.input.exitPointerLock();
+  }
+
   private onPrimaryDown(): void {
     const self = this.getLocalPlayerState();
     if (!self || !self.alive) return;
+
+    // 0. Launch boat if Vessel Placement Ghost is active
+    if (this.activeBoatKind && this.boatGhostPos) {
+      if (!this.boatGhostPos.valid) {
+        this.ui.showToast('Aim at deeper coastal water to launch this boat!', 'warn');
+        return;
+      }
+      this.net.sendBuildBoat({
+        kind: this.activeBoatKind,
+        x: this.boatGhostPos.x,
+        z: this.boatGhostPos.z,
+        rotY: this.boatGhostPos.rotY,
+      });
+      this.activeBoatKind = null;
+      this.boatGhostPos = null;
+      this.boats?.updateGhost(null, 0, 0, 0, false);
+      return;
+    }
 
     // 1. Place structure if Build Preview is active
     if (this.activeBuildKind && this.ghostPlacement) {
@@ -617,6 +748,57 @@ class WildreachGame {
     }
 
     const eqItem = getItem(self.equippedItemId);
+
+    // 1.5 Brass Spyglass 3x Optical Zoom
+    if (eqItem?.id === 'spyglass') {
+      this.spyglassActive = true;
+      this.ui.setSpyglassActive(true);
+      this.audio.playSfx('ui');
+      return;
+    }
+
+    // 1.6 Bamboo Fishing Rod — Cast & Reel Minigame!
+    if (eqItem?.id === 'fishing_rod') {
+      if (this.fishing.active) {
+        if (this.fishing.biteWindow > 0) {
+          this.net.sendFishCatch(this.fishing.deepWater);
+          this.audio.playSfx('drink');
+          this.effects?.spawnBurst(this.fishing.bobberX, WATER_LEVEL + 0.3, this.fishing.bobberZ, '#7dd3fc', 12, 4.5);
+        } else {
+          this.ui.showToast('Reeled in early — wait for the fish bite splash!', 'info');
+        }
+        this.fishing.active = false;
+        this.livingFX?.setFishingBobber(false, this.pos, 0, 0, false);
+        return;
+      }
+      // Cast bobber forward onto ocean water or Crystal Spring
+      const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+      const castX = this.pos.x + fwd.x * 11;
+      const castZ = this.pos.z + fwd.z * 11;
+      const bedH = this.world.getHeight(castX, castZ);
+      const isWater = bedH < WATER_LEVEL - 0.15 || self.status.nearFreshWater || Boolean(self.boatId);
+      if (!isWater) {
+        this.ui.showToast('Face ocean water, a dock, or Crystal Spring to cast your line!', 'warn');
+        return;
+      }
+      this.fishing = {
+        active: true,
+        bobberX: castX,
+        bobberZ: castZ,
+        timer: 2.4 + Math.random() * 2.8,
+        biteWindow: 0,
+        deepWater: bedH < -2.6,
+      };
+      this.audio.playSfx('arrow');
+      this.ui.showToast(
+        this.fishing.deepWater
+          ? '🎣 Cast into Deep Sea! Watch for a Golden Snapper bite...'
+          : '🎣 Line cast! Wait for the bobber to dip...',
+        'info'
+      );
+      return;
+    }
+
     // 2. Consume edible/bandage directly on Left-Click
     if (eqItem?.category === 'consumable') {
       this.net.sendConsume(self.equippedSlot);
@@ -636,6 +818,10 @@ class WildreachGame {
   }
 
   private onPrimaryUp(): void {
+    if (this.spyglassActive) {
+      this.spyglassActive = false;
+      this.ui.setSpyglassActive(false);
+    }
     if (this.chargingBow) {
       this.chargingBow = false;
       this.audio.playSfx('arrow');
@@ -646,6 +832,13 @@ class WildreachGame {
   }
 
   private onSecondaryDown(): void {
+    if (this.activeBoatKind) {
+      this.activeBoatKind = null;
+      this.boatGhostPos = null;
+      this.boats?.updateGhost(null, 0, 0, 0, false);
+      this.ui.showToast('Exited Vessel Placement', 'info');
+      return;
+    }
     if (this.activeBuildKind) {
       this.activeBuildKind = null;
       this.activeBuildFromSlot = undefined;
@@ -668,6 +861,27 @@ class WildreachGame {
   private onInteract(): void {
     const self = this.getLocalPlayerState();
     if (!self || !self.alive) return;
+
+    // 0. Disembark active boat if already sailing
+    if (self.boatId) {
+      this.sailGear = 0;
+      this.net.sendBoardBoat(null);
+      return;
+    }
+
+    // 0.5 Board aimed boat (or nearest boat within 5.2m)
+    if (this.aimBoatId) {
+      this.sailGear = 0;
+      this.net.sendBoardBoat(this.aimBoatId);
+      return;
+    }
+    for (const b of this.boatMap.values()) {
+      if (Math.hypot(b.x - this.pos.x, b.z - this.pos.z) < 4.5 && !b.pilotId) {
+        this.sailGear = 0;
+        this.net.sendBoardBoat(b.id);
+        return;
+      }
+    }
 
     // 1. Open Shared Chest UI
     if (this.aimStructureId) {
@@ -708,8 +922,8 @@ class WildreachGame {
       dir.set(-Math.sin(this.input.yaw), 0, -Math.cos(this.input.yaw));
     }
     this.net.sendDodge({ x: dir.x, z: dir.z });
-    this.pos.x = clamp(this.pos.x + dir.x * 3.1, -170, 170);
-    this.pos.z = clamp(this.pos.z + dir.z * 3.1, -170, 170);
+    this.pos.x = clamp(this.pos.x + dir.x * 3.1, -212, 212);
+    this.pos.z = clamp(this.pos.z + dir.z * 3.1, -212, 212);
   }
 
   private firePrimaryAction(charge: number): void {
@@ -748,10 +962,17 @@ class WildreachGame {
 
   private getSupportHeight(x: number, z: number): number {
     let h = this.world.getHeight(x, z);
+    // Built-in South Harbor Wooden Jetty deck!
+    if (this.livingFX) {
+      const jetty = this.world.getHarborJettySpot();
+      if (Math.abs(x - jetty.x) < 2.25 && z >= jetty.z - 2 && z <= jetty.z + 18) {
+        h = Math.max(h, WATER_LEVEL + 0.65);
+      }
+    }
     for (const s of this.structureMap.values()) {
-      if (s.kind === 'wood_foundation') {
-        if (Math.abs(x - s.x) < 1.68 && Math.abs(z - s.z) < 1.68) {
-          h = Math.max(h, s.y + 0.53);
+      if (s.kind === 'wood_foundation' || s.kind === 'dock_pier') {
+        if (Math.abs(x - s.x) < 1.72 && Math.abs(z - s.z) < 1.72) {
+          h = Math.max(h, s.y + (s.kind === 'dock_pier' ? 0.52 : 0.53));
         }
       }
     }
@@ -775,11 +996,102 @@ class WildreachGame {
       this.ui.setBowCharge(this.bowCharge);
     }
 
+    // Smooth Brass Spyglass 3x Optical FOV interpolation
+    const baseFov = this.computeResponsiveFov(window.innerWidth, window.innerHeight);
+    const targetFov = this.spyglassActive ? 21 : this.chargingBow ? baseFov - 8 : baseFov;
+    if (Math.abs(this.camera.fov - targetFov) > 0.1) {
+      this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, dt * 11);
+      this.camera.updateProjectionMatrix();
+    }
+
+    // Active Fishing Minigame timer & bobber visual
+    if (this.fishing.active) {
+      if (self.equippedItemId !== 'fishing_rod') {
+        this.fishing.active = false;
+        this.livingFX?.setFishingBobber(false, this.pos, 0, 0, false);
+      } else {
+        if (this.fishing.biteWindow > 0) {
+          this.fishing.biteWindow -= dt;
+          if (this.fishing.biteWindow <= 0) {
+            this.ui.showToast('The fish slipped off the hook! Cast again.', 'warn');
+            this.fishing.active = false;
+            this.livingFX?.setFishingBobber(false, this.pos, 0, 0, false);
+          }
+        } else {
+          this.fishing.timer -= dt;
+          if (this.fishing.timer <= 0) {
+            this.fishing.biteWindow = 2.6;
+            this.audio.playFootstep('water');
+            this.effects?.spawnBurst(this.fishing.bobberX, WATER_LEVEL + 0.25, this.fishing.bobberZ, '#e0f2fe', 10, 3.6);
+            this.ui.showToast('🐟 BITE! Click / Tap ACT now to reel it in!', 'good');
+          }
+        }
+        if (this.fishing.active) {
+          const rodTip = this.pos.clone().add(new THREE.Vector3(0, 1.85, 0));
+          this.livingFX?.setFishingBobber(
+            true,
+            rodTip,
+            this.fishing.bobberX,
+            this.fishing.bobberZ,
+            this.fishing.biteWindow > 0
+          );
+        }
+      }
+    }
+
     let anim: AnimState = 'idle';
     let sprinting = false;
     let swimming = false;
+    const pilotedBoat = self.boatId ? this.boatMap.get(self.boatId) ?? null : null;
 
-    if (self.alive && !this.input.uiOpen && !this.input.chatOpen) {
+    if (pilotedBoat && self.alive && !this.input.uiOpen && !this.input.chatOpen) {
+      // ==================== SAILING HELM MODE ====================
+      const look = this.touch.consumeLookDelta();
+      if (look.dx !== 0 || look.dy !== 0) {
+        this.input.yaw -= look.dx * 0.0052;
+        this.input.pitch = clamp(this.input.pitch + look.dy * 0.0044, -0.75, 1.15);
+      }
+
+      // Keyboard W/S steps throttle gear; A/D steers rudder
+      this.sailGearCooldown = Math.max(0, this.sailGearCooldown - dt);
+      const fwdKey = this.input.keys.has('KeyW') || this.input.keys.has('ArrowUp');
+      const backKey = this.input.keys.has('KeyS') || this.input.keys.has('ArrowDown');
+      if (fwdKey && this.sailGearCooldown <= 0 && this.sailGear < 3) {
+        this.sailGear = (this.sailGear + 1) as -1 | 0 | 1 | 2 | 3;
+        this.sailGearCooldown = 0.24;
+      } else if (backKey && this.sailGearCooldown <= 0 && this.sailGear > -1) {
+        this.sailGear = (this.sailGear - 1) as -1 | 0 | 1 | 2 | 3;
+        this.sailGearCooldown = 0.24;
+      }
+
+      // Mobile touch joystick automatically sets sail gear & steering!
+      if (Math.abs(this.touch.moveY) > 0.2) {
+        if (this.touch.moveY > 0.72) this.sailGear = 3;
+        else if (this.touch.moveY > 0.38) this.sailGear = 2;
+        else if (this.touch.moveY > 0.15) this.sailGear = 1;
+        else if (this.touch.moveY < -0.35) this.sailGear = -1;
+      }
+
+      let steer = 0;
+      if (this.input.keys.has('KeyA') || this.input.keys.has('ArrowLeft')) steer += 1;
+      if (this.input.keys.has('KeyD') || this.input.keys.has('ArrowRight')) steer -= 1;
+      if (Math.abs(this.touch.moveX) > 0.12) steer = clamp(-this.touch.moveX, -1, 1);
+
+      this.boatCtrlTimer += dt;
+      if (this.boatCtrlTimer >= 0.06) {
+        this.boatCtrlTimer = 0;
+        this.net.sendBoatControl({ steer, throttle: this.sailGear });
+      }
+
+      const helmPos = this.boats?.getHelmWorldPos(pilotedBoat.id);
+      if (helmPos) {
+        this.pos.lerp(helmPos, Math.min(1, dt * 16));
+      } else {
+        this.pos.set(pilotedBoat.x, pilotedBoat.y + 0.55, pilotedBoat.z);
+      }
+      this.vel.set(0, 0, 0);
+      anim = 'idle';
+    } else if (self.alive && !this.input.uiOpen && !this.input.chatOpen) {
       // Apply smooth touch camera drag look delta
       const look = this.touch.consumeLookDelta();
       if (look.dx !== 0 || look.dy !== 0) {
@@ -823,8 +1135,8 @@ class WildreachGame {
       }
 
       // Apply movement + basic solid structure collision
-      const nextX = clamp(this.pos.x + this.vel.x * dt, -170, 170);
-      const nextZ = clamp(this.pos.z + this.vel.z * dt, -170, 170);
+      const nextX = clamp(this.pos.x + this.vel.x * dt, -212, 212);
+      const nextZ = clamp(this.pos.z + this.vel.z * dt, -212, 212);
       if (!this.collidesWithSolidStructure(nextX, nextZ, this.pos.y)) {
         this.pos.x = nextX;
         this.pos.z = nextZ;
@@ -895,14 +1207,22 @@ class WildreachGame {
       this.camera.position.set(this.pos.x, eyeY, this.pos.z);
       this.camera.lookAt(this.pos.x + lookDir.x * 10, eyeY + lookDir.y * 10, this.pos.z + lookDir.z * 10);
     } else {
-      // Valheim-style slight right-shoulder third-person orbit camera
-      const camDist = this.chargingBow ? 3.1 : 4.8;
+      // Valheim-style slight right-shoulder third-person orbit camera (pulled back smoothly when sailing!)
+      const sailDist =
+        pilotedBoat?.kind === 'longship'
+          ? 12.8
+          : pilotedBoat?.kind === 'skiff'
+          ? 9.2
+          : pilotedBoat
+          ? 7.8
+          : 4.8;
+      const camDist = this.chargingBow ? 3.1 : sailDist;
       const right = new THREE.Vector3(Math.cos(this.input.yaw), 0, -Math.sin(this.input.yaw));
-      const camPos = new THREE.Vector3(this.pos.x, eyeY + 0.35, this.pos.z)
+      const camPos = new THREE.Vector3(this.pos.x, eyeY + (pilotedBoat ? 1.85 : 0.35), this.pos.z)
         .addScaledVector(lookDir, -camDist)
-        .addScaledVector(right, 0.55);
+        .addScaledVector(right, pilotedBoat ? 0 : 0.55);
 
-      const terrainAtCam = this.world.getHeight(camPos.x, camPos.z) + 0.45;
+      const terrainAtCam = Math.max(this.world.getHeight(camPos.x, camPos.z), WATER_LEVEL) + 0.55;
       if (camPos.y < terrainAtCam) camPos.y = terrainAtCam;
 
       if (this.screenShake > 0) {
@@ -965,6 +1285,7 @@ class WildreachGame {
     this.aimNodeId = undefined;
     this.aimWildlifeId = undefined;
     this.aimStructureId = undefined;
+    this.aimBoatId = undefined;
     this.aimLootId = undefined;
     this.aimPlayerId = undefined;
 
@@ -972,10 +1293,38 @@ class WildreachGame {
     if (!self || !self.alive || this.ui.activePanel !== 'none') {
       this.ui.setInteractPrompt(null);
       this.structures?.updateGhost(null, 0, 0, 0, 0, false);
+      this.boats?.updateGhost(null, 0, 0, 0, false);
       return;
     }
 
     this.raycaster.setFromCamera(this.centerNDC, this.camera);
+
+    // 0. Boat / Vessel Launch Holographic Ghost Placement (aim onto water plane!)
+    if (this.activeBoatKind) {
+      const waterPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -WATER_LEVEL);
+      const hitPt = new THREE.Vector3();
+      const gotHit = this.raycaster.ray.intersectPlane(waterPlane, hitPt);
+      if (!gotHit || hitPt.distanceTo(this.pos) > 22) {
+        const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+        hitPt.set(this.pos.x + dir.x * 8.5, WATER_LEVEL, this.pos.z + dir.z * 8.5);
+      }
+      const distOk = Math.hypot(hitPt.x - this.pos.x, hitPt.z - this.pos.z) <= 18;
+      const bedH = this.world.getHeight(hitPt.x, hitPt.z);
+      const deepEnough = bedH < WATER_LEVEL - 0.35;
+      const valid = distOk && deepEnough;
+
+      this.boatGhostPos = { x: hitPt.x, z: hitPt.z, rotY: this.buildRotY, valid };
+      this.boats?.updateGhost(this.activeBoatKind, hitPt.x, hitPt.z, this.buildRotY, valid);
+      const bdef = BOATS[this.activeBoatKind];
+      this.ui.setInteractPrompt(
+        valid ? `[LMB] Launch ${bdef.name} into Sea` : `Aim at deeper water to launch ${bdef.name}`,
+        `[R] Rotate Hull • [RMB] Cancel • [B] Shipyard`
+      );
+      return;
+    } else {
+      this.boatGhostPos = null;
+      this.boats?.updateGhost(null, 0, 0, 0, false);
+    }
 
     // Build Mode Holographic Ghost Placement
     if (this.activeBuildKind && this.terrainMesh) {
@@ -995,9 +1344,12 @@ class WildreachGame {
         Array.from(this.structureMap.values()),
         (x, z) => this.world.getHeight(x, z)
       );
-      const distOk = Math.hypot(snapped.x - this.pos.x, snapped.z - this.pos.z) <= 11.5;
-      const aboveWater = this.world.getHeight(snapped.x, snapped.z) >= WATER_LEVEL - 0.1;
-      const valid = distOk && aboveWater;
+      const distOk = Math.hypot(snapped.x - this.pos.x, snapped.z - this.pos.z) <= 12.5;
+      const allowWater = this.activeBuildKind === 'dock_pier';
+      const heightOk = allowWater
+        ? this.world.getHeight(snapped.x, snapped.z) <= WATER_LEVEL + 1.8
+        : this.world.getHeight(snapped.x, snapped.z) >= WATER_LEVEL - 0.1;
+      const valid = distOk && heightOk;
 
       this.ghostPlacement = { ...snapped, valid };
       this.structures?.updateGhost(
@@ -1019,8 +1371,9 @@ class WildreachGame {
       this.structures?.updateGhost(null, 0, 0, 0, 0, false);
     }
 
-    // Raycast interactive targets (loot, wildlife, structures, resource nodes)
+    // Raycast interactive targets (boats, loot, wildlife, structures, resource nodes)
     const targets: THREE.Object3D[] = [];
+    if (this.boats && !self.boatId) targets.push(this.boats.group);
     if (this.effects) targets.push(this.effects.lootGroup);
     if (this.wildlife) targets.push(this.wildlife.group);
     if (this.structures) targets.push(this.structures.group);
@@ -1033,10 +1386,24 @@ class WildreachGame {
     let progressPct: number | undefined;
 
     for (const h of hits) {
-      if (h.distance > 10.5) break;
+      if (h.distance > 11.5) break;
       const u = h.object.userData;
       const worldDist = h.point.distanceTo(this.pos);
-      if (worldDist > 5.8) continue;
+      if (worldDist > 6.8) continue;
+
+      if (u.boatId && !self.boatId) {
+        const b = this.boatMap.get(u.boatId as string);
+        if (b) {
+          this.aimBoatId = b.id;
+          const bdef = BOATS[b.kind];
+          prompt = b.pilotId
+            ? `${bdef.name} (Piloted)`
+            : `[E] Board & Sail ${bdef.name}`;
+          sub = bdef.cargoSlots > 0 ? `W/S Sail Gears • A/D Rudder • [F] ${bdef.cargoSlots}-Slot Cargo` : `W/S Sail Gears • A/D Rudder • [E] Disembark`;
+          progressPct = (b.hp / b.maxHp) * 100;
+          break;
+        }
+      }
 
       if (u.lootId) {
         this.aimLootId = u.lootId as string;
@@ -1069,6 +1436,13 @@ class WildreachGame {
           } else if (st.kind === 'rain_collector') {
             prompt = `[E] Drink Rainwater (${Math.round(st.waterLevel ?? 0)}%)`;
             progressPct = st.waterLevel ?? 0;
+          } else if (st.kind === 'planter_box') {
+            const pct = Math.round(st.cropProgress ?? 0);
+            prompt = pct >= 100 ? `[E] Harvest Sunbloom & Berries!` : `Planter Box Growing (${pct}%)`;
+            progressPct = pct;
+          } else if (st.kind === 'alchemy_cauldron') {
+            prompt = `Alchemy Cauldron — Press [C] to Brew Elixirs`;
+            progressPct = (st.hp / st.maxHp) * 100;
           } else if (st.kind === 'bedroll') {
             prompt = `[E] Set Respawn Point`;
           } else {
@@ -1160,15 +1534,24 @@ class WildreachGame {
         );
 
         const hasInteract = Boolean(
-          this.aimLootId || this.aimStructureId || self.status.nearFreshWater || this.aimNodeId
+          this.aimBoatId ||
+            self.boatId ||
+            this.aimLootId ||
+            this.aimStructureId ||
+            self.status.nearFreshWater ||
+            this.aimNodeId
         );
         this.touch.setContextualState(
           hasInteract,
-          Boolean(this.activeBuildKind),
+          Boolean(this.activeBuildKind || this.activeBoatKind),
           this.ui.activePanel === 'none' && !this.ui.chatOpen && self.alive
         );
 
+        const activeBoat = self.boatId ? this.boatMap.get(self.boatId) ?? null : null;
+        this.ui.updateSailingHud(activeBoat, this.worldTime.windDirX, this.worldTime.windDirZ);
+
         const structuresArr = Array.from(this.structureMap.values());
+        const boatsArr = Array.from(this.boatMap.values());
         this.minimap?.renderHud(
           this.pos.x,
           this.pos.z,
@@ -1176,7 +1559,8 @@ class WildreachGame {
           this.localId,
           this.allPlayers,
           structuresArr,
-          this.landmarks
+          this.landmarks,
+          boatsArr
         );
 
         // Ambient soundscape crossfade
@@ -1199,16 +1583,21 @@ class WildreachGame {
     }
 
     // Update animated world systems
+    const nightFactor = clamp(1 - (this.sky.sunDirection.y + 0.08) * 3.5, 0, 1);
     this.water?.update(
       this.elapsed,
       this.worldTime,
       this.sky.sunDirection,
       this.sky.sunLight.color,
       this.sky.horizonColor,
-      this.sky.fog.density
+      this.sky.fog.color,
+      this.sky.fog.density,
+      nightFactor
     );
     this.env?.update(dt, this.elapsed, this.worldTime.windSpeed);
     this.structures?.update(dt, this.elapsed);
+    this.boats?.update(dt, this.elapsed, this.worldTime, nightFactor);
+    this.livingFX?.update(dt, this.elapsed, this.worldTime, nightFactor);
     this.wildlife?.update(dt, this.elapsed, this.camera);
     this.effects?.update(
       dt,

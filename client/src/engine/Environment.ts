@@ -728,6 +728,73 @@ export class EnvironmentManager {
       const band = new THREE.Mesh(new THREE.BoxGeometry(1.09, 0.16, 1.09), this.sharedMats.ironBand);
       band.position.y = 0.48;
       g.add(band);
+    } else if (kind === 'coral_reef_node') {
+      const coralMat = new THREE.MeshStandardMaterial({
+        color: '#f472b6',
+        emissive: '#ec4899',
+        emissiveIntensity: 0.38,
+        roughness: 0.55,
+      });
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        const branch = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.85, 6), coralMat);
+        branch.position.set(Math.cos(a) * 0.28, 0.42, Math.sin(a) * 0.28);
+        branch.rotation.z = Math.cos(a) * 0.35;
+        branch.rotation.x = Math.sin(a) * 0.35;
+        g.add(branch);
+      }
+      const pearl = new THREE.Mesh(
+        new THREE.SphereGeometry(0.18, 10, 10),
+        new THREE.MeshStandardMaterial({
+          color: '#f0f9ff',
+          emissive: '#38bdf8',
+          emissiveIntensity: 0.65,
+          roughness: 0.15,
+          metalness: 0.3,
+        })
+      );
+      pearl.position.set(0, 0.52, 0);
+      g.add(pearl);
+    } else if (kind === 'sunbloom_flower') {
+      const stemMat = new THREE.MeshStandardMaterial({ color: '#4d7c0f', roughness: 0.8 });
+      const petalMat = new THREE.MeshStandardMaterial({
+        color: '#fde047',
+        emissive: '#f59e0b',
+        emissiveIntensity: 0.55,
+        roughness: 0.4,
+      });
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * Math.PI * 2;
+        const sx = Math.cos(a) * 0.24;
+        const sz = Math.sin(a) * 0.24;
+        const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 0.68, 5), stemMat);
+        stem.position.set(sx, 0.34, sz);
+        const bloom = new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), petalMat);
+        bloom.position.set(sx, 0.72, sz);
+        g.add(stem, bloom);
+      }
+    } else if (kind === 'sunken_wreck_chest') {
+      const chest = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.72, 0.78), this.sharedMats.crateWood);
+      chest.position.y = 0.36;
+      chest.castShadow = true;
+      const lid = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.39, 0.39, 1.18, 8, 1, false, 0, Math.PI),
+        this.sharedMats.crateWood
+      );
+      lid.rotation.z = Math.PI / 2;
+      lid.position.y = 0.72;
+      const goldTrim = new THREE.Mesh(
+        new THREE.BoxGeometry(1.22, 0.14, 0.82),
+        new THREE.MeshStandardMaterial({
+          color: '#facc15',
+          emissive: '#d97706',
+          emissiveIntensity: 0.35,
+          metalness: 0.75,
+          roughness: 0.28,
+        })
+      );
+      goldTrim.position.y = 0.68;
+      g.add(chest, lid, goldTrim);
     }
 
     return g;

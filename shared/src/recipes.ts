@@ -1,11 +1,11 @@
-export type CraftStation = 'hand' | 'campfire' | 'workbench' | 'furnace' | 'runic_forge';
+export type CraftStation = 'hand' | 'campfire' | 'workbench' | 'furnace' | 'runic_forge' | 'cauldron';
 
 export interface RecipeDef {
   id: string;
   outputItemId: string;
   outputCount: number;
   station: CraftStation;
-  category: 'tools' | 'weapons' | 'survival' | 'materials' | 'stations' | 'armor';
+  category: 'tools' | 'weapons' | 'survival' | 'food' | 'materials' | 'stations' | 'armor';
   ingredients: { itemId: string; count: number }[];
   xpReward: number;
 }
@@ -335,6 +335,151 @@ export const RECIPES: RecipeDef[] = [
       { itemId: 'iron_ingot', count: 4 },
     ],
     xpReward: 110,
+  },
+
+  // ---- Naval, Fishing, Seafood & Alchemy Recipes ----
+  {
+    id: 'rcp_fishing_rod',
+    outputItemId: 'fishing_rod',
+    outputCount: 1,
+    station: 'hand',
+    category: 'tools',
+    ingredients: [
+      { itemId: 'wood', count: 4 },
+      { itemId: 'fiber', count: 4 },
+      { itemId: 'flint', count: 1 },
+    ],
+    xpReward: 18,
+  },
+  {
+    id: 'rcp_spyglass',
+    outputItemId: 'spyglass',
+    outputCount: 1,
+    station: 'workbench',
+    category: 'tools',
+    ingredients: [
+      { itemId: 'copper_ingot', count: 2 },
+      { itemId: 'sea_pearl', count: 1 },
+      { itemId: 'wood', count: 2 },
+    ],
+    xpReward: 32,
+  },
+  {
+    id: 'rcp_grilled_fish',
+    outputItemId: 'grilled_fish',
+    outputCount: 1,
+    station: 'campfire',
+    category: 'food',
+    ingredients: [{ itemId: 'raw_fish', count: 1 }],
+    xpReward: 12,
+  },
+  {
+    id: 'rcp_cooked_crab',
+    outputItemId: 'cooked_crab',
+    outputCount: 1,
+    station: 'campfire',
+    category: 'food',
+    ingredients: [{ itemId: 'crab_meat', count: 1 }],
+    xpReward: 14,
+  },
+  {
+    id: 'rcp_roasted_serpent',
+    outputItemId: 'roasted_serpent',
+    outputCount: 1,
+    station: 'campfire',
+    category: 'food',
+    ingredients: [{ itemId: 'serpent_meat', count: 1 }],
+    xpReward: 26,
+  },
+  {
+    id: 'rcp_iron_cutlass',
+    outputItemId: 'iron_cutlass',
+    outputCount: 1,
+    station: 'furnace',
+    category: 'weapons',
+    ingredients: [
+      { itemId: 'iron_ingot', count: 3 },
+      { itemId: 'copper_ingot', count: 2 },
+      { itemId: 'rope', count: 1 },
+    ],
+    xpReward: 52,
+  },
+  {
+    id: 'rcp_captains_coat',
+    outputItemId: 'captains_coat',
+    outputCount: 1,
+    station: 'workbench',
+    category: 'armor',
+    ingredients: [
+      { itemId: 'hide', count: 6 },
+      { itemId: 'copper_ingot', count: 2 },
+      { itemId: 'resin', count: 3 },
+    ],
+    xpReward: 48,
+  },
+  {
+    id: 'rcp_abyssal_harpoon',
+    outputItemId: 'abyssal_harpoon',
+    outputCount: 1,
+    station: 'runic_forge',
+    category: 'weapons',
+    ingredients: [
+      { itemId: 'iron_ingot', count: 4 },
+      { itemId: 'sea_pearl', count: 3 },
+      { itemId: 'serpent_scale', count: 2 },
+    ],
+    xpReward: 95,
+  },
+  {
+    id: 'rcp_serpent_scale_mail',
+    outputItemId: 'serpent_scale_mail',
+    outputCount: 1,
+    station: 'furnace',
+    category: 'armor',
+    ingredients: [
+      { itemId: 'serpent_scale', count: 5 },
+      { itemId: 'iron_ingot', count: 4 },
+      { itemId: 'hide', count: 4 },
+    ],
+    xpReward: 88,
+  },
+  {
+    id: 'rcp_seafarer_chowder',
+    outputItemId: 'seafarer_chowder',
+    outputCount: 2,
+    station: 'cauldron',
+    category: 'food',
+    ingredients: [
+      { itemId: 'golden_snapper', count: 1 },
+      { itemId: 'crab_meat', count: 1 },
+      { itemId: 'sunbloom', count: 1 },
+    ],
+    xpReward: 42,
+  },
+  {
+    id: 'rcp_sea_wind_tonic',
+    outputItemId: 'sea_wind_tonic',
+    outputCount: 2,
+    station: 'cauldron',
+    category: 'survival',
+    ingredients: [
+      { itemId: 'sea_pearl', count: 1 },
+      { itemId: 'berries', count: 3 },
+    ],
+    xpReward: 34,
+  },
+  {
+    id: 'rcp_sunfire_elixir',
+    outputItemId: 'sunfire_elixir',
+    outputCount: 2,
+    station: 'cauldron',
+    category: 'survival',
+    ingredients: [
+      { itemId: 'sunbloom', count: 2 },
+      { itemId: 'resin', count: 2 },
+      { itemId: 'mushroom', count: 1 },
+    ],
+    xpReward: 38,
   },
 ];
 

@@ -48,6 +48,7 @@ export interface StatusFlags {
   nearWorkbench: boolean;
   nearFurnace: boolean;
   nearRunicForge: boolean;
+  nearCauldron: boolean;
   nearFreshWater: boolean;
 }
 
@@ -88,6 +89,7 @@ export interface PlayerState {
   daysSurvived: number;
   emote: string | null;
   emoteUntil: number;
+  boatId: string | null;
 }
 
 export interface LocalPlayerPrivateState {
@@ -111,7 +113,10 @@ export type ResourceNodeKind =
   | 'fiber_reed'
   | 'mushroom_cluster'
   | 'driftwood'
-  | 'supply_crate';
+  | 'supply_crate'
+  | 'coral_reef_node'
+  | 'sunbloom_flower'
+  | 'sunken_wreck_chest';
 
 export interface ResourceNodeState {
   id: string;
@@ -132,6 +137,7 @@ export type StructureKind =
   | 'workbench'
   | 'furnace'
   | 'runic_forge'
+  | 'alchemy_cauldron'
   | 'wood_foundation'
   | 'wood_wall'
   | 'wood_doorway'
@@ -143,7 +149,13 @@ export type StructureKind =
   | 'bedroll'
   | 'rain_collector'
   | 'lantern_post'
-  | 'watchtower_beacon';
+  | 'watchtower_beacon'
+  | 'dock_pier'
+  | 'lighthouse_beacon'
+  | 'planter_box'
+  | 'windmill'
+  | 'camp_banner'
+  | 'tiki_brazier';
 
 export interface StructureState {
   id: string;
@@ -160,10 +172,40 @@ export interface StructureState {
   lit?: boolean;
   fuel?: number; // 0..100
   waterLevel?: number; // 0..100 for rain collector
+  cropProgress?: number; // 0..100 for planter box
   chestSlots?: (InventorySlot | null)[];
 }
 
-export type WildlifeKind = 'deer' | 'boar' | 'wolf' | 'stalker';
+export type BoatKind = 'raft' | 'skiff' | 'longship';
+
+export interface BoatState {
+  id: string;
+  kind: BoatKind;
+  ownerId: string;
+  ownerName: string;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  vx: number;
+  vz: number;
+  speed: number;
+  throttle: number; // -1 reverse, 0 stop, 1 paddle, 2 half sail, 3 full sail
+  rudder: number; // -1..1
+  hp: number;
+  maxHp: number;
+  pilotId: string | null;
+  chestSlots?: (InventorySlot | null)[];
+}
+
+export type WildlifeKind =
+  | 'deer'
+  | 'boar'
+  | 'wolf'
+  | 'stalker'
+  | 'crab'
+  | 'serpent'
+  | 'cinder_golem';
 
 export type WildlifeAIState = 'idle' | 'wander' | 'flee' | 'chase' | 'attack' | 'dead';
 
@@ -216,7 +258,7 @@ export interface WorldTimeState {
 export interface LandmarkInfo {
   id: string;
   name: string;
-  kind: 'sanctuary' | 'shipwreck' | 'watchtower' | 'peak' | 'spring' | 'ruins';
+  kind: 'sanctuary' | 'shipwreck' | 'watchtower' | 'peak' | 'spring' | 'ruins' | 'atoll' | 'volcano' | 'sea_arch' | 'jetty';
   x: number;
   z: number;
   radius: number;

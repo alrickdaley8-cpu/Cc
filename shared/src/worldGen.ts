@@ -7,8 +7,8 @@ import type {
   Vec3,
 } from './types.js';
 
-export const WORLD_SIZE = 360;
-export const HALF_WORLD = WORLD_SIZE / 2; // 180
+export const WORLD_SIZE = 440;
+export const HALF_WORLD = WORLD_SIZE / 2; // 220
 export const WATER_LEVEL = 0.0;
 export const SWIM_DEPTH = -0.65;
 
@@ -209,6 +209,45 @@ export const RESOURCE_NODE_BLUEPRINTS: Record<ResourceNodeKind, NodeBlueprint> =
     respawnSec: 320,
     radius: 0.85,
   },
+  coral_reef_node: {
+    kind: 'coral_reef_node',
+    maxHp: 55,
+    minToolTier: 0,
+    preferredTool: 'pickaxe',
+    drops: [
+      { itemId: 'sea_pearl', min: 1, max: 2 },
+      { itemId: 'flint', min: 1, max: 2, chance: 0.65 },
+    ],
+    respawnSec: 210,
+    radius: 0.85,
+  },
+  sunbloom_flower: {
+    kind: 'sunbloom_flower',
+    maxHp: 22,
+    minToolTier: 0,
+    preferredTool: 'hand',
+    drops: [
+      { itemId: 'sunbloom', min: 2, max: 4 },
+      { itemId: 'fiber', min: 1, max: 2, chance: 0.5 },
+    ],
+    respawnSec: 140,
+    radius: 0.55,
+  },
+  sunken_wreck_chest: {
+    kind: 'sunken_wreck_chest',
+    maxHp: 65,
+    minToolTier: 0,
+    preferredTool: 'axe',
+    drops: [
+      { itemId: 'gold_coin', min: 3, max: 8 },
+      { itemId: 'iron_ingot', min: 1, max: 3, chance: 0.85 },
+      { itemId: 'sea_pearl', min: 1, max: 2, chance: 0.75 },
+      { itemId: 'rope', min: 2, max: 3, chance: 0.8 },
+      { itemId: 'seafarer_chowder', min: 1, max: 1, chance: 0.55 },
+    ],
+    respawnSec: 380,
+    radius: 0.95,
+  },
 };
 
 export class WorldGenerator {
@@ -277,6 +316,38 @@ export class WorldGenerator {
         z: 36,
         radius: 18,
       },
+      {
+        id: 'lm_jetty',
+        name: 'South Harbor Jetty',
+        kind: 'jetty',
+        x: 20,
+        z: 106,
+        radius: 14,
+      },
+      {
+        id: 'lm_atoll',
+        name: 'Shipwreck Coral Atoll',
+        kind: 'atoll',
+        x: -148,
+        z: 136,
+        radius: 32,
+      },
+      {
+        id: 'lm_volcano',
+        name: 'Volcanic Obsidian Isle',
+        kind: 'volcano',
+        x: 152,
+        z: -136,
+        radius: 34,
+      },
+      {
+        id: 'lm_sea_arch',
+        name: 'Sea-Arch Sanctuary',
+        kind: 'sea_arch',
+        x: -146,
+        z: -134,
+        radius: 30,
+      },
     ];
   }
 
@@ -297,8 +368,52 @@ export class WorldGenerator {
     const islandMask = 1 - smoothstep(0.56, 1.06, effectiveDist);
     const shelfDepth = lerp(-7.2, 0.2, smoothstep(1.18, 0.72, effectiveDist));
 
+    // ---- 3 Explorable Outer Sailing Islands across open ocean! ----
+    const computeOuterIslands = (): number => {
+      let outerH = -7.2 + this.detailNoise.noise2D(x * 0.03, z * 0.03) * 0.35;
+
+      // 1) SW Shipwreck Coral Atoll (-148, 136) — low turquoise sandbar + palm lagoon
+      const atollD = Math.hypot(x + 148, z - 136);
+      if (atollD < 46) {
+        const warp = this.shapeNoise.noise2D(x * 0.04, z * 0.04) * 5.5;
+        const m = 1 - smoothstep(11, 36, atollD + warp);
+        if (m > 0) {
+          const hA = 0.6 + m * 3.8 + this.detailNoise.noise2D(x * 0.05, z * 0.05) * 0.65;
+          outerH = Math.max(outerH, lerp(-6.5, hA, m));
+        }
+      }
+
+      // 2) NE Volcanic Obsidian Isle (152, -136) — steep basalt caldera + obsidian crags
+      const volcD = Math.hypot(x - 152, z + 136);
+      if (volcD < 48) {
+        const warp = this.shapeNoise.noise2D(x * 0.035, z * 0.035) * 4.5;
+        const m = 1 - smoothstep(10, 38, volcD + warp);
+        if (m > 0) {
+          const ridge = this.ridgeNoise.ridged(x * 0.03, z * 0.03, 3);
+          const hV = 2.0 + m * (14.5 + ridge * 7.5);
+          outerH = Math.max(outerH, lerp(-6.8, hV, m));
+        }
+      }
+
+      // 3) NW Sea-Arch Sanctuary Isle (-146, -134) — pine-crowned highland bluff & cove
+      const archD = Math.hypot(x + 146, z + 134);
+      if (archD < 45) {
+        const warp = this.shapeNoise.noise2D(x * 0.038, z * 0.038) * 5.0;
+        const m = 1 - smoothstep(10, 35, archD + warp);
+        if (m > 0) {
+          const hS = 1.6 + m * 8.4 + this.detailNoise.fbm(x * 0.04, z * 0.04, 2) * 1.1;
+          outerH = Math.max(outerH, lerp(-6.6, hS, m));
+        }
+      }
+
+      return outerH;
+    };
+
     if (islandMask <= 0.001) {
-      return shelfDepth + this.detailNoise.noise2D(x * 0.03, z * 0.03) * 0.35;
+      return Math.max(
+        shelfDepth + this.detailNoise.noise2D(x * 0.03, z * 0.03) * 0.35,
+        computeOuterIslands()
+      );
     }
 
     // Base rolling island terrain
@@ -405,9 +520,15 @@ export class WorldGenerator {
     let biome: BiomeType;
     const marshDist = Math.hypot(x - 84, z - 36);
     const peakDist = Math.hypot(x - 62, z + 68);
+    const outerVolcDist = Math.hypot(x - 152, z + 136);
+    const outerAtollDist = Math.hypot(x + 148, z - 136);
 
     if (height < WATER_LEVEL - 0.12) {
       biome = 'ocean';
+    } else if (outerVolcDist < 36 && height > 2.2) {
+      biome = 'volcanic';
+    } else if (outerAtollDist < 35 && height < 3.6) {
+      biome = 'beach';
     } else if (marshDist < 42 && height < 2.6) {
       biome = 'marsh';
     } else if (height < 1.55) {
@@ -429,6 +550,33 @@ export class WorldGenerator {
     const x = -10;
     const z = 25;
     return { x, y: this.getHeight(x, z), z };
+  }
+
+  /**
+   * Finds a reliable deep-enough coastal water spot just off the South Harbor Jetty
+   * for mooring the starter Timber Raft.
+   */
+  getStarterBoatSpot(): { x: number; z: number; yaw: number } {
+    const x = 20;
+    for (let z = 96; z <= 184; z += 2) {
+      if (this.getHeight(x, z) < -1.1 && this.getHeight(x + 4.5, z + 2) < -1.1) {
+        return { x: x + 4.5, z: z + 2, yaw: Math.PI };
+      }
+    }
+    return { x: 24.5, z: 172, yaw: Math.PI };
+  }
+
+  /**
+   * Finds exact waterline coordinate for the South Harbor Jetty pier.
+   */
+  getHarborJettySpot(): { x: number; z: number } {
+    const x = 20;
+    for (let z = 82; z <= 176; z += 1.5) {
+      if (this.getHeight(x, z) < 0.15) {
+        return { x, z };
+      }
+    }
+    return { x: 20, z: 158 };
   }
 
   generateResourceNodes(): ResourceNodeState[] {
@@ -486,6 +634,8 @@ export class WorldGenerator {
       ['oak_tree', -17, 7],
       ['pine_tree', -27, 12],
       ['copper_vein', -31, 4],
+      ['sunbloom_flower', -6, 12],
+      ['sunbloom_flower', 6, 23],
     ];
     for (const [kind, sx, sz] of starterSpots) {
       if (this.getHeight(sx, sz) > 0.3) {
@@ -493,25 +643,55 @@ export class WorldGenerator {
       }
     }
 
-    // Shipwreck salvage crates on southern beach
-    const crateSpots: [number, number][] = [
-      [-18, 108], [-10, 109], [-15, 117], [-6, 113], [-22, 113],
-      [-40, -56], [-48, -66], // watchtower supplies
-      [81, 32], [89, 39], // sunken bog relics
+    // Shipwreck salvage crates on southern beach + outer Shipwreck Atoll sunken chests!
+    const crateSpots: [ResourceNodeKind, number, number][] = [
+      ['supply_crate', -18, 108],
+      ['supply_crate', -10, 109],
+      ['supply_crate', -15, 117],
+      ['supply_crate', -6, 113],
+      ['supply_crate', -22, 113],
+      ['supply_crate', -40, -56],
+      ['supply_crate', -48, -66],
+      ['supply_crate', 81, 32],
+      ['supply_crate', 89, 39],
+      // Outer Shipwreck Atoll treasure chests
+      ['sunken_wreck_chest', -144, 134],
+      ['sunken_wreck_chest', -154, 140],
+      ['sunken_wreck_chest', -147, 128],
+      // Outer Sea-Arch Isle treasures & sunblooms
+      ['sunken_wreck_chest', -146, -131],
+      ['sunbloom_flower', -141, -137],
+      ['sunbloom_flower', -151, -135],
+      ['sunbloom_flower', -145, -142],
+      // Outer Volcanic Obsidian Isle rich veins
+      ['obsidian_vein', 148, -132],
+      ['obsidian_vein', 156, -140],
+      ['ancient_crystal', 151, -135],
+      ['iron_vein', 144, -139],
+      ['iron_vein', 158, -130],
     ];
-    for (const [cx, cz] of crateSpots) {
-      if (this.getHeight(cx, cz) > 0.15) {
-        addNode('supply_crate', cx, cz, 0.95, 1.1);
+    for (const [kind, cx, cz] of crateSpots) {
+      if (this.getHeight(cx, cz) > 0.1) {
+        addNode(kind, cx, cz, 0.95, 1.12);
       }
     }
 
-    // Procedural biome-driven world scatter (~620 nodes)
-    const attempts = 3200;
-    for (let i = 0; i < attempts && nodes.length < 620; i++) {
-      const x = (rng() * 2 - 1) * 145;
-      const z = (rng() * 2 - 1) * 145;
+    // Procedural biome-driven world scatter (~740 nodes including outer islands & shallow coral reefs!)
+    const attempts = 4400;
+    for (let i = 0; i < attempts && nodes.length < 740; i++) {
+      const x = (rng() * 2 - 1) * 195;
+      const z = (rng() * 2 - 1) * 195;
       const sample = this.sample(x, z);
-      if (sample.biome === 'ocean') continue;
+
+      // Shallow turquoise coral reefs right along beaches & Shipwreck Atoll!
+      if (sample.biome === 'ocean') {
+        if (sample.height > -1.35 && sample.height < -0.25 && rng() < 0.065) {
+          if (canPlace(x, z, 3.5)) {
+            addNode('coral_reef_node', x, z, 0.85, 1.3);
+          }
+        }
+        continue;
+      }
       if (sample.slope > 0.92) continue;
 
       let kind: ResourceNodeKind | null = null;
@@ -524,24 +704,26 @@ export class WorldGenerator {
         else if (r < 0.88) kind = 'stone_boulder';
         else kind = 'fiber_reed';
       } else if (sample.biome === 'meadow') {
-        if (r < 0.28) kind = 'oak_tree';
-        else if (r < 0.50) kind = 'birch_tree';
-        else if (r < 0.66) kind = 'berry_bush';
-        else if (r < 0.80) kind = 'stone_boulder';
+        if (r < 0.26) kind = 'oak_tree';
+        else if (r < 0.46) kind = 'birch_tree';
+        else if (r < 0.60) kind = 'berry_bush';
+        else if (r < 0.70) kind = 'sunbloom_flower';
+        else if (r < 0.82) kind = 'stone_boulder';
         else if (r < 0.92) kind = 'fiber_reed';
         else kind = 'copper_vein';
       } else if (sample.biome === 'pine') {
-        if (r < 0.52) kind = 'pine_tree';
-        else if (r < 0.68) kind = 'stone_boulder';
-        else if (r < 0.81) kind = 'copper_vein';
-        else if (r < 0.91) kind = 'iron_vein';
+        if (r < 0.50) kind = 'pine_tree';
+        else if (r < 0.66) kind = 'stone_boulder';
+        else if (r < 0.79) kind = 'copper_vein';
+        else if (r < 0.89) kind = 'iron_vein';
         else kind = 'mushroom_cluster';
       } else if (sample.biome === 'highland') {
-        if (r < 0.28) kind = 'pine_tree';
-        else if (r < 0.52) kind = 'stone_boulder';
-        else if (r < 0.72) kind = 'iron_vein';
-        else if (r < 0.88) kind = 'copper_vein';
-        else kind = 'ancient_crystal';
+        if (r < 0.26) kind = 'pine_tree';
+        else if (r < 0.48) kind = 'stone_boulder';
+        else if (r < 0.68) kind = 'iron_vein';
+        else if (r < 0.82) kind = 'copper_vein';
+        else if (r < 0.92) kind = 'ancient_crystal';
+        else kind = 'sunbloom_flower';
       } else if (sample.biome === 'volcanic') {
         if (r < 0.36) kind = 'obsidian_vein';
         else if (r < 0.62) kind = 'iron_vein';

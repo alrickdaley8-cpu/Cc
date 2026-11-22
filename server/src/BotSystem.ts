@@ -98,6 +98,7 @@ export class BotSystem {
         nearWorkbench: false,
         nearFurnace: false,
         nearRunicForge: false,
+        nearCauldron: false,
         nearFreshWater: false,
       },
       alive: true,
@@ -110,6 +111,7 @@ export class BotSystem {
       daysSurvived: 1,
       emote: null,
       emoteUntil: 0,
+      boatId: null,
     };
   }
 
