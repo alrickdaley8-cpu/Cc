@@ -52,10 +52,13 @@ export interface UIActions {
   onSetVolume: (vol: number) => void;
   onSetTouchMode: (mode: 'auto' | 'on' | 'off') => void;
   onOpenMap: () => void;
+  onOpenParty: () => void;
+  onDropPing: () => void;
+  onTeleportToFriend: (playerId: string) => void;
   onResumeGame: () => void;
 }
 
-export type ActivePanel = 'none' | 'inventory' | 'crafting' | 'build' | 'map' | 'chest' | 'boat_cargo' | 'pause';
+export type ActivePanel = 'none' | 'inventory' | 'crafting' | 'build' | 'map' | 'chest' | 'boat_cargo' | 'party' | 'pause';
 
 export class UIManager {
   activePanel: ActivePanel = 'none';
@@ -70,6 +73,8 @@ export class UIManager {
   private craftStationFilter: string = 'all';
   private lastPrivate: LocalPlayerPrivateState | null = null;
   private lastSelf: PlayerState | null = null;
+  private lastPlayers: PlayerState[] = [];
+  private lastTransportMode: 'dedicated' | 'p2p-host' | 'p2p-client' = 'dedicated';
   private touchMode: 'auto' | 'on' | 'off' = 'auto';
   private activeRoomId = 'emerald-archipelago';
   private activeSeed = 42077;
@@ -210,16 +215,16 @@ export class UIManager {
 
     if (badgeEl) {
       if (serverReachable) {
-        badgeEl.textContent = '● Live Multiplayer Server';
+        badgeEl.textContent = '● Live 20Hz Multiplayer Server';
         badgeEl.classList.remove('offline');
       } else {
-        badgeEl.textContent = '◆ Local World (Static / GitHub Pages)';
-        badgeEl.classList.add('offline');
+        badgeEl.textContent = '⚡ WebRTC P2P Multiplayer Ready';
+        badgeEl.classList.remove('offline');
       }
     }
 
     if (!serverReachable) {
-      listEl.innerHTML = `<div class="room-empty"><strong>Static / Offline Ready!</strong> No backend server detected on this host, so Wildreach will launch a full browser-simulated island (with AI allies & auto-save). Paste a Socket.IO server URL on the left to play online co-op!</div>`;
+      listEl.innerHTML = `<div class="room-empty"><strong>Serverless WebRTC Multiplayer Active!</strong> Enter any Room ID and share your <strong>🔗 Invite</strong> link — friends on GitHub Pages or another tab will join your live 3D island directly over WebRTC P2P (zero server needed!), or paste a Socket.IO server URL on the left.</div>`;
       return;
     }
 
@@ -265,6 +270,15 @@ export class UIManager {
     });
     document.getElementById('btn-sail-cargo')?.addEventListener('click', () => {
       this.actions.onOpenBoatCargo();
+    });
+    document.getElementById('hud-net')?.addEventListener('click', () => {
+      this.actions.onOpenParty();
+    });
+    document.getElementById('qbtn-party')?.addEventListener('click', () => {
+      this.actions.onOpenParty();
+    });
+    document.getElementById('qbtn-ping')?.addEventListener('click', () => {
+      this.actions.onDropPing();
     });
 
     this.chatInputEl.addEventListener('keydown', (e) => {
@@ -384,6 +398,10 @@ export class UIManager {
     }
   }
 
+  setReconnecting(show: boolean): void {
+    document.getElementById('reconnect-banner')?.classList.toggle('hidden', !show);
+  }
+
   updateHud(
     self: PlayerState,
     priv: LocalPlayerPrivateState,
@@ -395,13 +413,30 @@ export class UIManager {
     pointerLocked: boolean,
     touchActive = false,
     isOfflineMode = false,
-    pointerLockBlocked = false
+    pointerLockBlocked = false,
+    transportMode: 'dedicated' | 'p2p-host' | 'p2p-client' = 'dedicated',
+    allPlayers: PlayerState[] = []
   ): void {
     this.lastSelf = self;
     this.lastPrivate = priv;
+    this.lastPlayers = allPlayers;
+    this.lastTransportMode = transportMode;
 
-    // Death screen
-    this.deathOverlay.classList.toggle('hidden', self.alive);
+    // Death / Co-op Downed screen
+    const showDeath = !self.alive || Boolean(self.downed);
+    this.deathOverlay.classList.toggle('hidden', !showDeath);
+    if (showDeath) {
+      const titleEl = document.getElementById('death-title');
+      const descEl = document.getElementById('death-desc');
+      if (self.downed && self.downedUntil) {
+        const secs = Math.max(0, Math.ceil((self.downedUntil - Date.now()) / 1000));
+        if (titleEl) titleEl.textContent = `⚠ DOWNED — BLEEDING OUT (${secs}s)`;
+        if (descEl) descEl.textContent = 'A teammate can run over and press [E] to revive you, or awaken at camp now.';
+      } else {
+        if (titleEl) titleEl.textContent = 'YOU FELL IN THE WILD';
+        if (descEl) descEl.textContent = 'Your spirit drifts back toward the Sanctuary hearth (or your placed Camp Bedroll).';
+      }
+    }
 
     // Click-to-resume hint (hidden on touch devices and in preview iframes where Pointer Lock is unavailable)
     const lockHint = document.getElementById('lock-hint');
@@ -433,9 +468,16 @@ export class UIManager {
 
     const netEl = document.getElementById('hud-net');
     if (netEl) {
-      netEl.textContent = isOfflineMode
-        ? `Local World • Lv.${self.level}`
-        : `${onlineCount} Online • ${pingMs}ms • Lv.${self.level}`;
+      const humanCount = allPlayers.filter((p) => !p.isBot).length || onlineCount;
+      if (transportMode === 'p2p-host') {
+        netEl.textContent = `⚡ P2P Host • ${humanCount} Online • Lv.${self.level}`;
+      } else if (transportMode === 'p2p-client') {
+        netEl.textContent = `⚡ P2P • ${humanCount} Online • ${pingMs}ms • Lv.${self.level}`;
+      } else if (isOfflineMode) {
+        netEl.textContent = `⚡ P2P Ready • Lv.${self.level}`;
+      } else {
+        netEl.textContent = `🌐 ${humanCount} Online • ${pingMs}ms • Lv.${self.level}`;
+      }
     }
 
     // Vitals bars
@@ -924,6 +966,87 @@ export class UIManager {
           const side = b.dataset.side as 'inventory' | 'chest';
           const idx = Number(b.dataset.idx);
           this.actions.onChestTransfer(chestStructure.id, side, idx);
+        });
+      });
+    } else if (this.activePanel === 'party') {
+      const modeLabel =
+        this.lastTransportMode === 'dedicated'
+          ? '🌐 Dedicated 20Hz Multiplayer Server'
+          : this.lastTransportMode === 'p2p-host'
+          ? '⚡ Serverless WebRTC P2P Host (Friends Can Join Live!)'
+          : '⚡ Connected to Friend via Serverless WebRTC P2P';
+
+      const rows = this.lastPlayers
+        .map((p) => {
+          const isMe = p.id === self.id;
+          const dist = Math.round(Math.hypot(p.x - self.x, p.z - self.z));
+          const hpPct = Math.round((p.vitals.hp / Math.max(1, p.vitals.maxHp)) * 100);
+          const tag = p.isBot ? '<span class="party-tag bot">[AI] Ally</span>' : p.isHost ? '<span class="party-tag host">👑 Host</span>' : '<span class="party-tag">Survivor</span>';
+          const status = p.downed ? '<span class="party-downed">⚠ DOWNED</span>' : p.boatId ? '⛵ At Sea' : `${dist}m away`;
+          return `
+            <div class="party-row ${isMe ? 'me' : ''}">
+              <div class="party-info">
+                <div class="party-name">${this.esc(p.name)} ${tag} <span class="party-lvl">Lv.${p.level}</span></div>
+                <div class="party-sub">${isMe ? 'You' : status} • ${p.outfit}</div>
+                <div class="vital-track"><div class="vital-fill fill-hp" style="width:${hpPct}%"></div></div>
+              </div>
+              ${
+                !isMe && p.alive && !p.downed
+                  ? `<button class="btn-craft btn-rally" data-pid="${p.id}">⚡ Rally</button>`
+                  : ''
+              }
+            </div>`;
+        })
+        .join('');
+
+      this.panelContainer.innerHTML = `
+        <div class="modal-card modal-wide">
+          <div class="modal-header">
+            <h2>👥 Archipelago Crew & Multiplayer</h2>
+            <button class="btn-close" id="btn-panel-close">✕</button>
+          </div>
+          <div class="party-banner">
+            <div>
+              <div class="party-mode">${modeLabel}</div>
+              <div class="party-room">Room ID: <strong>${this.esc(this.activeRoomId)}</strong> • Invite friends with the same link!</div>
+            </div>
+            <div class="party-banner-btns">
+              <button class="btn-primary" id="btn-party-invite">🔗 Copy Invite Link</button>
+              <button class="btn-ghost" id="btn-party-ping">📍 Ping Here [G]</button>
+            </div>
+          </div>
+          <div class="party-list">${rows}</div>
+          <div class="party-footer">
+            <button class="btn-ghost" id="btn-party-bot">+ Summon [AI] Ally</button>
+            <button class="btn-ghost" id="btn-party-pvp">⚔ Toggle PvP (${self.pvpEnabled ? 'ON' : 'OFF'})</button>
+          </div>
+        </div>`;
+
+      this.panelContainer.querySelector('#btn-panel-close')?.addEventListener('click', () => {
+        this.setPanel('none');
+        this.actions.onResumeGame();
+      });
+      this.panelContainer.querySelector('#btn-party-invite')?.addEventListener('click', () => {
+        void this.copyInvite(this.activeRoomId, this.activeSeed, this.activeServerUrl || undefined);
+      });
+      this.panelContainer.querySelector('#btn-party-ping')?.addEventListener('click', () => {
+        this.actions.onDropPing();
+        this.setPanel('none');
+        this.actions.onResumeGame();
+      });
+      this.panelContainer.querySelector('#btn-party-bot')?.addEventListener('click', () => {
+        this.actions.onSpawnBot();
+      });
+      this.panelContainer.querySelector('#btn-party-pvp')?.addEventListener('click', () => {
+        this.actions.onTogglePvp();
+      });
+      this.panelContainer.querySelectorAll<HTMLButtonElement>('.btn-rally').forEach((b) => {
+        b.addEventListener('click', () => {
+          if (b.dataset.pid) {
+            this.actions.onTeleportToFriend(b.dataset.pid);
+            this.setPanel('none');
+            this.actions.onResumeGame();
+          }
         });
       });
     } else if (this.activePanel === 'pause') {

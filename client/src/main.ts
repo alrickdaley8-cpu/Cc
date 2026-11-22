@@ -19,6 +19,7 @@ import {
   type ResourceNodeState,
   type StructureKind,
   type StructureState,
+  type WorldPing,
   type WorldTimeState,
 } from '@wildreach/shared';
 import { createProceduralTextures, type ProceduralTextureSet } from './engine/Textures';
@@ -34,6 +35,7 @@ import { WildlifeManager } from './engine/WildlifeMesh';
 import { EffectsManager } from './engine/Effects';
 import { AudioEngine } from './engine/AudioEngine';
 import { NetworkClient } from './net/NetworkClient';
+import { InterpolationBuffer } from './net/InterpolationBuffer';
 import { InputController } from './gameplay/InputController';
 import { TouchControls } from './gameplay/TouchControls';
 import { MinimapRenderer } from './ui/Minimap';
@@ -41,8 +43,7 @@ import { UIManager } from './ui/UIManager';
 
 interface RemotePlayerEntry {
   visual: CharacterVisual;
-  targetPos: THREE.Vector3;
-  targetYaw: number;
+  interp: InterpolationBuffer;
   state: PlayerState;
 }
 
@@ -82,6 +83,7 @@ class WildreachGame {
   private nodeMap = new Map<string, ResourceNodeState>();
   private structureMap = new Map<string, StructureState>();
   private boatMap = new Map<string, BoatState>();
+  private worldPings: WorldPing[] = [];
   private landmarks: LandmarkInfo[] = [];
   private worldTime: WorldTimeState = {
     day: 1,
@@ -138,6 +140,7 @@ class WildreachGame {
   private aimBoatId: string | undefined;
   private aimLootId: string | undefined;
   private aimPlayerId: string | undefined;
+  private aimDownedPlayerId: string | undefined;
 
   private clock = new THREE.Clock();
   private elapsed = 0;
@@ -228,6 +231,9 @@ class WildreachGame {
       onSetVolume: (vol) => this.audio.setVolume(vol),
       onSetTouchMode: (mode) => this.touch.setMode(mode),
       onOpenMap: () => this.togglePanel('map'),
+      onOpenParty: () => this.togglePanel('party'),
+      onDropPing: () => this.dropWorldPing(),
+      onTeleportToFriend: (pid) => this.net.sendTeleportToFriend(pid),
       onResumeGame: () => {
         this.syncInputFlags();
         if (!this.touch.enabled) this.input.requestPointerLock();
@@ -306,10 +312,26 @@ class WildreachGame {
       },
     });
 
-    // Hotkey [F] opens onboard boat cargo hold when sailing a Skiff or Longship
+    // Multiplayer hotkeys: [F] Boat Cargo, [P] Crew/Party Panel, [G] 3D World Ping
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'KeyF' && this.inGame && this.ui.activePanel === 'none' && !this.ui.chatOpen) {
+      if (!this.inGame || this.ui.chatOpen) return;
+      if (e.code === 'KeyP') {
+        e.preventDefault();
+        this.togglePanel('party');
+        return;
+      }
+      if (this.ui.activePanel !== 'none') return;
+      if (e.code === 'KeyF') {
         this.openActiveBoatCargo();
+      } else if (e.code === 'KeyG') {
+        this.dropWorldPing();
+      }
+    });
+    // Middle-click drops a 3D World Ping right where you're aiming!
+    canvas.addEventListener('mousedown', (e) => {
+      if (e.button === 1 && this.inGame && this.ui.activePanel === 'none' && !this.ui.chatOpen) {
+        e.preventDefault();
+        this.dropWorldPing();
       }
     });
 
@@ -454,12 +476,31 @@ class WildreachGame {
         onLootRemove: (id) => this.effects?.removeLoot(id),
         onCombatEvent: (ev) => this.projectFloatingText(ev.x, ev.y, ev.z, ev.text, ev.color),
         onFxEvent: (ev) => this.handleFxEvent(ev),
-        onChatMessage: (msg) => this.ui.appendChat(msg),
-        onToast: ({ text, tone }) => this.ui.showToast(text, tone),
-        onConnectionChange: (connected) => {
-          if (!connected && this.inGame) {
-            this.ui.showToast('Connection interrupted — attempting to reconnect...', 'danger');
+        onChatMessage: (msg) => {
+          this.ui.appendChat(msg);
+          const rp = this.remotePlayers.get(msg.senderId);
+          if (rp && msg.kind === 'chat') {
+            rp.visual.setChatBubble(msg.text);
           }
+        },
+        onWorldPing: (ping) => {
+          this.worldPings.push(ping);
+          if (this.worldPings.length > 14) this.worldPings.shift();
+          this.effects?.addWorldPing(ping);
+          this.audio.playSfx('ui');
+          this.ui.showToast(`📍 ${ping.senderName} pinged ${ping.label}!`, 'info');
+        },
+        onToast: ({ text, tone }) => this.ui.showToast(text, tone),
+        onConnectionChange: (connected, reconnecting) => {
+          this.ui.setReconnecting(Boolean(!connected && reconnecting && this.inGame));
+          if (!connected && this.inGame) {
+            this.ui.showToast('Connection interrupted — reconnecting automatically...', 'danger');
+          }
+        },
+        onRejoined: (reInit) => {
+          this.applyWorldInit(reInit);
+          this.ui.setReconnecting(false);
+          this.ui.showToast('Reconnected! Your inventory & island state are synced.', 'good');
         },
       });
 
@@ -472,39 +513,8 @@ class WildreachGame {
         spawnAiCompanions: opts.spawnAiCompanions,
       });
 
-      this.buildWorldScene(init.room.seed);
-      this.localId = init.playerId;
-      this.landmarks = init.landmarks;
-      this.worldTime = init.time;
-      this.privateState = init.privateState;
-      this.allPlayers = init.players;
-
-      this.nodeMap.clear();
-      for (const n of init.nodes) this.nodeMap.set(n.id, n);
-      this.env?.syncNodes(init.nodes);
-
-      this.structureMap.clear();
-      for (const s of init.structures) this.structureMap.set(s.id, s);
-      this.structures?.syncAll(init.structures);
-
-      this.boatMap.clear();
-      for (const b of init.boats) this.boatMap.set(b.id, b);
-      this.boats?.syncAll(init.boats);
-
-      this.wildlife?.sync(init.wildlife);
-      this.effects?.syncLootAll(init.loot);
-
+      this.applyWorldInit(init);
       for (const msg of init.chatHistory) this.ui.appendChat(msg);
-
-      const self = init.players.find((p) => p.id === this.localId);
-      if (self) {
-        this.pos.set(self.x, self.y, self.z);
-        this.input.yaw = self.yaw;
-        if (this.localVisual) this.scene.remove(this.localVisual.group);
-        this.localVisual = new CharacterVisual(self.outfit, false);
-        this.localVisual.group.position.copy(this.pos);
-        this.scene.add(this.localVisual.group);
-      }
 
       this.inGame = true;
       this.ui.hideTitleScreen();
@@ -512,15 +522,87 @@ class WildreachGame {
       if (!this.touch.enabled) {
         this.input.requestPointerLock();
       }
-      this.ui.showToast(
-        this.net.isOfflineMode
-          ? `Entered ${init.room.name} (Offline / GitHub Pages Mode)`
-          : `Entered ${init.room.name} (Seed ${init.room.seed})`,
-        'good'
-      );
+      const modeToast =
+        this.net.transportMode === 'dedicated'
+          ? `Connected to ${init.room.name} (20Hz Live Server)`
+          : this.net.transportMode === 'p2p-client'
+          ? `Joined ${init.room.name} via Serverless WebRTC P2P!`
+          : `Hosting ${init.room.name} (WebRTC P2P Ready — share 🔗 Invite!)`;
+      this.ui.showToast(modeToast, 'good');
     } catch (err) {
       this.ui.showToast(err instanceof Error ? err.message : 'Unable to connect to server', 'danger');
     }
+  }
+
+  private applyWorldInit(init: import('@wildreach/shared').WorldInitPayload): void {
+    this.buildWorldScene(init.room.seed);
+    this.localId = init.playerId;
+    this.landmarks = init.landmarks;
+    this.worldTime = init.time;
+    this.privateState = init.privateState;
+    this.allPlayers = init.players;
+
+    this.nodeMap.clear();
+    for (const n of init.nodes) this.nodeMap.set(n.id, n);
+    this.env?.syncNodes(init.nodes);
+
+    this.structureMap.clear();
+    for (const s of init.structures) this.structureMap.set(s.id, s);
+    this.structures?.syncAll(init.structures);
+
+    this.boatMap.clear();
+    for (const b of init.boats) this.boatMap.set(b.id, b);
+    this.boats?.syncAll(init.boats);
+
+    this.worldPings = init.pings ? [...init.pings] : [];
+    for (const pg of this.worldPings) this.effects?.addWorldPing(pg);
+
+    this.wildlife?.sync(init.wildlife);
+    this.effects?.syncLootAll(init.loot);
+
+    // Clear stale remote avatars cleanly on rejoin
+    for (const entry of this.remotePlayers.values()) {
+      this.scene.remove(entry.visual.group);
+    }
+    this.remotePlayers.clear();
+
+    const self = init.players.find((p) => p.id === this.localId);
+    if (self) {
+      this.pos.set(self.x, self.y, self.z);
+      this.input.yaw = self.yaw;
+      if (this.localVisual) this.scene.remove(this.localVisual.group);
+      this.localVisual = new CharacterVisual(self.outfit, false);
+      this.localVisual.group.position.copy(this.pos);
+      this.scene.add(this.localVisual.group);
+    }
+  }
+
+  private dropWorldPing(): void {
+    const self = this.getLocalPlayerState();
+    if (!self || !self.alive) return;
+
+    this.raycaster.setFromCamera(this.centerNDC, this.camera);
+    let px = this.pos.x;
+    let py = this.pos.y;
+    let pz = this.pos.z;
+    let label = 'Rally Here';
+
+    if (this.terrainMesh) {
+      const hits = this.raycaster.intersectObject(this.terrainMesh, false);
+      if (hits.length > 0 && hits[0].distance < 220) {
+        px = hits[0].point.x;
+        py = hits[0].point.y;
+        pz = hits[0].point.z;
+        label = 'Waypoint';
+        for (const lm of this.landmarks) {
+          if (Math.hypot(lm.x - px, lm.z - pz) < lm.radius + 14) {
+            label = lm.name;
+            break;
+          }
+        }
+      }
+    }
+    this.net.sendWorldPing({ x: px, y: py, z: pz, label });
   }
 
   private handleSnapshot(snap: {
@@ -540,10 +622,11 @@ class WildreachGame {
       this.boats?.syncAll(snap.boats);
     }
 
+    const nowPerf = performance.now();
     const seenRemote = new Set<string>();
     for (const p of snap.players) {
       if (p.id === this.localId) {
-        // Gentle server correction on death/respawn or knockback
+        // Gentle server correction on death/respawn, rally teleport, or knockback
         if (!p.alive || this.pos.distanceTo(new THREE.Vector3(p.x, p.y, p.z)) > 7.5) {
           this.pos.set(p.x, p.y, p.z);
         }
@@ -558,16 +641,16 @@ class WildreachGame {
           o.userData.playerId = p.id;
         });
         this.scene.add(vis.group);
+        const interp = new InterpolationBuffer(95, 160);
+        interp.push(p.x, p.y, p.z, p.yaw, nowPerf);
         entry = {
           visual: vis,
-          targetPos: new THREE.Vector3(p.x, p.y, p.z),
-          targetYaw: p.yaw,
+          interp,
           state: p,
         };
         this.remotePlayers.set(p.id, entry);
       }
-      entry.targetPos.set(p.x, p.y, p.z);
-      entry.targetYaw = p.yaw;
+      entry.interp.push(p.x, p.y, p.z, p.yaw, nowPerf);
       entry.state = p;
     }
 
@@ -646,7 +729,7 @@ class WildreachGame {
     }
   }
 
-  private togglePanel(panel: 'inventory' | 'crafting' | 'build' | 'map' | 'pause'): void {
+  private togglePanel(panel: 'inventory' | 'crafting' | 'build' | 'map' | 'party' | 'pause'): void {
     if (!this.inGame) return;
     if (this.ui.activePanel === panel) {
       this.ui.setPanel('none');
@@ -665,7 +748,8 @@ class WildreachGame {
           this.allPlayers,
           Array.from(this.structureMap.values()),
           this.landmarks,
-          Array.from(this.boatMap.values())
+          Array.from(this.boatMap.values()),
+          this.worldPings
         );
       }
     }
@@ -860,23 +944,37 @@ class WildreachGame {
 
   private onInteract(): void {
     const self = this.getLocalPlayerState();
-    if (!self || !self.alive) return;
+    if (!self || !self.alive || self.downed) return;
 
-    // 0. Disembark active boat if already sailing
+    // 0. Revive downed co-op teammate!
+    if (this.aimDownedPlayerId) {
+      this.net.sendRevive(this.aimDownedPlayerId);
+      return;
+    }
+    for (const other of this.allPlayers) {
+      if (other.id !== self.id && other.downed && Math.hypot(other.x - this.pos.x, other.z - this.pos.z) < 4.5) {
+        this.net.sendRevive(other.id);
+        return;
+      }
+    }
+
+    // 0.25 Disembark active boat if already sailing or riding as crew
     if (self.boatId) {
       this.sailGear = 0;
       this.net.sendBoardBoat(null);
       return;
     }
 
-    // 0.5 Board aimed boat (or nearest boat within 5.2m)
+    // 0.5 Board aimed boat (or nearest boat with space within 5.0m — supports multi-passenger crew!)
     if (this.aimBoatId) {
       this.sailGear = 0;
       this.net.sendBoardBoat(this.aimBoatId);
       return;
     }
     for (const b of this.boatMap.values()) {
-      if (Math.hypot(b.x - this.pos.x, b.z - this.pos.z) < 4.5 && !b.pilotId) {
+      const def = BOATS[b.kind];
+      const crewCount = (b.pilotId ? 1 : 0) + (b.passengerIds?.length ?? 0);
+      if (Math.hypot(b.x - this.pos.x, b.z - this.pos.z) < 5.0 && crewCount < def.maxCrew) {
         this.sailGear = 0;
         this.net.sendBoardBoat(b.id);
         return;
@@ -1043,55 +1141,58 @@ class WildreachGame {
     let sprinting = false;
     let swimming = false;
     const pilotedBoat = self.boatId ? this.boatMap.get(self.boatId) ?? null : null;
+    const isPilot = Boolean(pilotedBoat && pilotedBoat.pilotId === self.id);
 
-    if (pilotedBoat && self.alive && !this.input.uiOpen && !this.input.chatOpen) {
-      // ==================== SAILING HELM MODE ====================
+    if (pilotedBoat && self.alive && !self.downed && !this.input.uiOpen && !this.input.chatOpen) {
+      // ==================== SAILING HELM & CREW PASSENGER MODE ====================
       const look = this.touch.consumeLookDelta();
       if (look.dx !== 0 || look.dy !== 0) {
         this.input.yaw -= look.dx * 0.0052;
         this.input.pitch = clamp(this.input.pitch + look.dy * 0.0044, -0.75, 1.15);
       }
 
-      // Keyboard W/S steps throttle gear; A/D steers rudder
-      this.sailGearCooldown = Math.max(0, this.sailGearCooldown - dt);
-      const fwdKey = this.input.keys.has('KeyW') || this.input.keys.has('ArrowUp');
-      const backKey = this.input.keys.has('KeyS') || this.input.keys.has('ArrowDown');
-      if (fwdKey && this.sailGearCooldown <= 0 && this.sailGear < 3) {
-        this.sailGear = (this.sailGear + 1) as -1 | 0 | 1 | 2 | 3;
-        this.sailGearCooldown = 0.24;
-      } else if (backKey && this.sailGearCooldown <= 0 && this.sailGear > -1) {
-        this.sailGear = (this.sailGear - 1) as -1 | 0 | 1 | 2 | 3;
-        this.sailGearCooldown = 0.24;
+      if (isPilot) {
+        // Keyboard W/S steps throttle gear; A/D steers rudder
+        this.sailGearCooldown = Math.max(0, this.sailGearCooldown - dt);
+        const fwdKey = this.input.keys.has('KeyW') || this.input.keys.has('ArrowUp');
+        const backKey = this.input.keys.has('KeyS') || this.input.keys.has('ArrowDown');
+        if (fwdKey && this.sailGearCooldown <= 0 && this.sailGear < 3) {
+          this.sailGear = (this.sailGear + 1) as -1 | 0 | 1 | 2 | 3;
+          this.sailGearCooldown = 0.24;
+        } else if (backKey && this.sailGearCooldown <= 0 && this.sailGear > -1) {
+          this.sailGear = (this.sailGear - 1) as -1 | 0 | 1 | 2 | 3;
+          this.sailGearCooldown = 0.24;
+        }
+
+        // Mobile touch joystick automatically sets sail gear & steering!
+        if (Math.abs(this.touch.moveY) > 0.2) {
+          if (this.touch.moveY > 0.72) this.sailGear = 3;
+          else if (this.touch.moveY > 0.38) this.sailGear = 2;
+          else if (this.touch.moveY > 0.15) this.sailGear = 1;
+          else if (this.touch.moveY < -0.35) this.sailGear = -1;
+        }
+
+        let steer = 0;
+        if (this.input.keys.has('KeyA') || this.input.keys.has('ArrowLeft')) steer += 1;
+        if (this.input.keys.has('KeyD') || this.input.keys.has('ArrowRight')) steer -= 1;
+        if (Math.abs(this.touch.moveX) > 0.12) steer = clamp(-this.touch.moveX, -1, 1);
+
+        this.boatCtrlTimer += dt;
+        if (this.boatCtrlTimer >= 0.06) {
+          this.boatCtrlTimer = 0;
+          this.net.sendBoatControl({ steer, throttle: this.sailGear });
+        }
       }
 
-      // Mobile touch joystick automatically sets sail gear & steering!
-      if (Math.abs(this.touch.moveY) > 0.2) {
-        if (this.touch.moveY > 0.72) this.sailGear = 3;
-        else if (this.touch.moveY > 0.38) this.sailGear = 2;
-        else if (this.touch.moveY > 0.15) this.sailGear = 1;
-        else if (this.touch.moveY < -0.35) this.sailGear = -1;
-      }
-
-      let steer = 0;
-      if (this.input.keys.has('KeyA') || this.input.keys.has('ArrowLeft')) steer += 1;
-      if (this.input.keys.has('KeyD') || this.input.keys.has('ArrowRight')) steer -= 1;
-      if (Math.abs(this.touch.moveX) > 0.12) steer = clamp(-this.touch.moveX, -1, 1);
-
-      this.boatCtrlTimer += dt;
-      if (this.boatCtrlTimer >= 0.06) {
-        this.boatCtrlTimer = 0;
-        this.net.sendBoatControl({ steer, throttle: this.sailGear });
-      }
-
-      const helmPos = this.boats?.getHelmWorldPos(pilotedBoat.id);
-      if (helmPos) {
-        this.pos.lerp(helmPos, Math.min(1, dt * 16));
+      const seatPos = this.boats?.getHelmWorldPos(pilotedBoat.id, isPilot ? 0 : self.boatSeatIndex ?? 1);
+      if (seatPos) {
+        this.pos.lerp(seatPos, Math.min(1, dt * 16));
       } else {
         this.pos.set(pilotedBoat.x, pilotedBoat.y + 0.55, pilotedBoat.z);
       }
       this.vel.set(0, 0, 0);
       anim = 'idle';
-    } else if (self.alive && !this.input.uiOpen && !this.input.chatOpen) {
+    } else if (self.alive && !self.downed && !this.input.uiOpen && !this.input.chatOpen) {
       // Apply smooth touch camera drag look delta
       const look = this.touch.consumeLookDelta();
       if (look.dx !== 0 || look.dy !== 0) {
@@ -1288,6 +1389,7 @@ class WildreachGame {
     this.aimBoatId = undefined;
     this.aimLootId = undefined;
     this.aimPlayerId = undefined;
+    this.aimDownedPlayerId = undefined;
 
     const self = this.getLocalPlayerState();
     if (!self || !self.alive || this.ui.activePanel !== 'none') {
@@ -1396,10 +1498,16 @@ class WildreachGame {
         if (b) {
           this.aimBoatId = b.id;
           const bdef = BOATS[b.kind];
-          prompt = b.pilotId
-            ? `${bdef.name} (Piloted)`
-            : `[E] Board & Sail ${bdef.name}`;
-          sub = bdef.cargoSlots > 0 ? `W/S Sail Gears • A/D Rudder • [F] ${bdef.cargoSlots}-Slot Cargo` : `W/S Sail Gears • A/D Rudder • [E] Disembark`;
+          const crew = (b.pilotId ? 1 : 0) + (b.passengerIds?.length ?? 0);
+          prompt = !b.pilotId
+            ? `[E] Board & Sail ${bdef.name}`
+            : crew < bdef.maxCrew
+            ? `[E] Board ${bdef.name} as Crew (${crew}/${bdef.maxCrew})`
+            : `${bdef.name} (Full Crew ${crew}/${bdef.maxCrew})`;
+          sub =
+            bdef.cargoSlots > 0
+              ? `Crew ${crew}/${bdef.maxCrew} • [F] ${bdef.cargoSlots}-Slot Cargo • [E] Disembark`
+              : `Crew ${crew}/${bdef.maxCrew} • W/S Sails • A/D Rudder`;
           progressPct = (b.hp / b.maxHp) * 100;
           break;
         }
@@ -1417,10 +1525,19 @@ class WildreachGame {
         prompt = `[LMB] Hunt ${kind}`;
         break;
       }
-      if (u.playerId && self.pvpEnabled) {
-        this.aimPlayerId = u.playerId as string;
-        prompt = `[LMB] Duel Survivor`;
-        break;
+      if (u.playerId) {
+        const targetP = this.allPlayers.find((pl) => pl.id === u.playerId);
+        if (targetP?.downed) {
+          this.aimDownedPlayerId = targetP.id;
+          prompt = `[E] Revive ${targetP.name}!`;
+          sub = 'Co-op Rescue (+35 XP)';
+          break;
+        }
+        if (self.pvpEnabled) {
+          this.aimPlayerId = u.playerId as string;
+          prompt = `[LMB] Duel Survivor`;
+          break;
+        }
       }
       if (u.structureId) {
         const st = this.structureMap.get(u.structureId as string);
@@ -1495,15 +1612,21 @@ class WildreachGame {
       this.updateTargetingAndBuildGhost();
       this.sky.update(dt, this.elapsed, this.worldTime, this.pos);
 
-      // Interpolate remote multiplayer survivors
-      const smooth = Math.min(1, dt * 12);
+      // Smoothly interpolate remote multiplayer survivors via timestamped InterpolationBuffer!
+      const nowPerf = performance.now();
       for (const entry of this.remotePlayers.values()) {
-        entry.visual.group.position.lerp(entry.targetPos, smooth);
-        let dy = entry.targetYaw - entry.visual.group.rotation.y;
-        while (dy > Math.PI) dy -= Math.PI * 2;
-        while (dy < -Math.PI) dy += Math.PI * 2;
-        entry.visual.group.rotation.y += dy * smooth;
+        const pose = entry.interp.sample(nowPerf);
+        if (pose) {
+          entry.visual.group.position.set(pose.x, pose.y, pose.z);
+          entry.visual.group.rotation.y = pose.yaw;
+        }
         entry.visual.animate(dt, entry.state, this.elapsed);
+      }
+
+      // Prune expired world pings
+      const nowMs = Date.now();
+      if (this.worldPings.length > 0) {
+        this.worldPings = this.worldPings.filter((pg) => pg.expiresAt > nowMs);
       }
 
       const self = this.getLocalPlayerState();
@@ -1530,11 +1653,14 @@ class WildreachGame {
           this.input.pointerLocked,
           this.touch.enabled,
           this.net.isOfflineMode,
-          this.input.pointerLockBlocked
+          this.input.pointerLockBlocked,
+          this.net.transportMode,
+          this.allPlayers
         );
 
         const hasInteract = Boolean(
-          this.aimBoatId ||
+          this.aimDownedPlayerId ||
+            this.aimBoatId ||
             self.boatId ||
             this.aimLootId ||
             this.aimStructureId ||
@@ -1560,7 +1686,8 @@ class WildreachGame {
           this.allPlayers,
           structuresArr,
           this.landmarks,
-          boatsArr
+          boatsArr,
+          this.worldPings
         );
 
         // Ambient soundscape crossfade

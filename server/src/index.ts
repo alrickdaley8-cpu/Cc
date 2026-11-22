@@ -26,6 +26,8 @@ app.use(express.json());
 const httpServer = http.createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   cors: { origin: '*' },
+  transports: ['websocket', 'polling'],
+  perMessageDeflate: false,
   pingInterval: 10000,
   pingTimeout: 20000,
 });
@@ -131,6 +133,9 @@ io.on('connection', (socket) => {
   socket.on('boat:control', (p) => socketToRoom.get(socket.id)?.handleBoatControl(socket.id, p));
   socket.on('boat:chestTransfer', (p) => socketToRoom.get(socket.id)?.handleBoatChestTransfer(socket.id, p));
   socket.on('player:fishCatch', (p) => socketToRoom.get(socket.id)?.handleFishCatch(socket.id, p));
+  socket.on('player:pingWorld', (p) => socketToRoom.get(socket.id)?.handleWorldPing(socket.id, p));
+  socket.on('player:revive', (id) => socketToRoom.get(socket.id)?.handleRevive(socket.id, id));
+  socket.on('player:teleportToFriend', (id) => socketToRoom.get(socket.id)?.handleTeleportToFriend(socket.id, id));
   socket.on('player:respawn', () => socketToRoom.get(socket.id)?.handleRespawn(socket.id));
   socket.on('player:togglePvp', () => socketToRoom.get(socket.id)?.handleTogglePvp(socket.id));
   socket.on('player:emote', (e) => socketToRoom.get(socket.id)?.handleEmote(socket.id, e));

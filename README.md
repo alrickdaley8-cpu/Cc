@@ -2,7 +2,7 @@
 
 A full-stack, cross-device 3D multiplayer survival game built with **TypeScript**, **Three.js (WebGL2)**, **Vite**, **Node.js**, **Express**, **Socket.IO**, and **Vitest**.
 
-> **Works everywhere:** Desktop (WASD + Mouse), Tablet & Mobile (Dual-Thumb Virtual Joystick + Touch Camera Look + Ergonomic Action Pad), live Node.js multiplayer servers, AND static **GitHub Pages** hosting via an automatic built-in browser survival simulation fallback!
+> **Works everywhere with REAL multiplayer:** Desktop (WASD + Mouse), Tablet & Mobile (Dual-Thumb Virtual Joystick + Touch Camera Look + Ergonomic Action Pad), live Node.js 20Hz Socket.IO servers, AND **static GitHub Pages with ZERO backend via built-in Serverless WebRTC P2P (`trystero` Nostr signaling) + same-browser `BroadcastChannel` sync!**
 
 ## Live GitHub Pages & Root Preview (Works Out of the Box!)
 
@@ -13,13 +13,20 @@ That means **every** GitHub Pages & preview method works immediately:
 - **GitHub Pages (GitHub Actions):** Or pick **Source → GitHub Actions** for automatic rebuilds on every push to `main`.
 - **Root Static / Iframe Previews:** Open `index.html` from any static server (`npx serve .`, `python3 -m http.server`, Arena Live Preview, or embedded iframe preview). Drag-to-look + click-to-act fallback automatically activates whenever an embedded preview restricts Pointer Lock.
 
-### Adding Live Online Co-op to Your GitHub Pages Link
-- By default on static GitHub Pages, WILDREACH automatically boots in **Local World Mode** (full 3D world, AI camp allies, wildlife, crafting, building, and `localStorage` auto-save).
-- For **real-time online multiplayer** across devices, deploy the included `render.yaml` (one-click on Render) or `Dockerfile` (Fly.io / Railway / VPS), then either:
-  - Paste your server URL into the Lobby's **Multiplayer Server URL** field, OR
-  - Share a direct invite link: `https://alrickdaley8-cpu.github.io/Cc/?room=emerald-archipelago&server=https://your-server.onrender.com`
+### 3-Tier Universal Multiplayer (Automatic Transport Selection)
+1. **Live 20Hz Dedicated Server (Socket.IO WebSockets):** Automatically activates when running `npm start`, Arena Preview, or whenever a custom server URL (`?server=https://...`) is provided. Includes automatic Socket.IO reconnection with persistent `playerToken` session/inventory/XP restore and automatic Host Crown handoff!
+2. **Serverless WebRTC P2P Multiplayer (GitHub Pages / Static Hosting — Zero Backend!):** On static GitHub Pages, sharing your **`🔗 Copy Invite Link`** (`?room=your-island`) connects friends directly browser-to-browser via **WebRTC DataChannels (`trystero` Nostr relays)** — the first player automatically becomes the authoritative **P2P Host** (running a hidden-tab-proof Web Worker 20Hz tick clock!) and friends join seamlessly as **P2P Crew**!
+3. **Instant Same-Browser Multi-Tab Sync (`BroadcastChannel`):** Open two browser tabs to the same `?room=...` link on static hosting and test real-time multiplayer instantly with near-0ms latency!
 
 ## Features
+
+- **Upgraded Co-op Multiplayer & Netcode:**
+  - **Buffered Entity Interpolation (`InterpolationBuffer`):** Timestamped snapshot buffer (`95ms` render delay, shortest-arc yaw wrap, bounded velocity extrapolation, instant teleport snap) makes remote players glide at buttery 60–144 FPS with zero network jitter.
+  - **Multi-Passenger Boats:** Friends can sail together on the same ship! **Timber Raft** (2 crew), **Outrigger Skiff** (3 crew), and **Viking Dragon Longship** (6 crew) — Captain steers at the helm while friends ride on deck seats with full buoyancy & shared cargo holds.
+  - **Co-op Downed & Revive System:** When teammates are present, hitting 0 HP puts you in a **30-second Downed bleedout state** with a pulsing `⚠ [E] REVIVE!` beacon so allies can rush in and rescue you (`+35 XP`).
+  - **3D World Pings (`[G]` or Middle-Click):** Drop glowing vertical sky-beam beacons synced to every player's 3D world, HUD minimap, and full Archipelago Chart!
+  - **3D Overhead Chat Bubbles & Host Crown Nameplates:** Chat messages float cleanly above your teammate's head in 3D space alongside their live HP bar, level, and `👑` Host Crown.
+  - **Live Crew & Party Roster (`[P]` or click top-right HUD chip):** View every player's live status, ping, distance, **⚡ Rally Teleport** straight to a friend, copy invite link, drop a ping, summon AI allies, or toggle PvP duels.
 
 - **Cross-Device Responsive UI & Controls:**
   - **Desktop:** Full Pointer-Lock camera (plus Right-Drag fallback), WASD movement, scroll/number hotbar, keyboard shortcuts.

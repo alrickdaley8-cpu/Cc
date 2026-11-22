@@ -42,6 +42,7 @@ import {
   type WeatherType,
   type WildlifeState,
   type WorldInitPayload,
+  type WorldPing,
   type WorldTimeState,
 } from '@wildreach/shared';
 import {
@@ -55,12 +56,32 @@ import {
 import { WILDLIFE_CONFIG, WildlifeSystem } from './WildlifeSystem.js';
 import { BotSystem } from './BotSystem.js';
 
+interface SavedPlayerProfile {
+  name: string;
+  outfit: PlayerState['outfit'];
+  x: number;
+  y: number;
+  z: number;
+  level: number;
+  xp: number;
+  kills: number;
+  daysSurvived: number;
+  bedPos: PlayerState['bedPos'];
+  equippedSlot: number;
+  armorItemId: string | null;
+  armorRating: number;
+  vitals: PlayerState['vitals'];
+  privateState: LocalPlayerPrivateState;
+  savedAt: number;
+}
+
 interface PersistedRoomData {
   seed: number;
   day: number;
   timeOfDay: number;
   structures: StructureState[];
   boats?: BoatState[];
+  profiles?: Record<string, SavedPlayerProfile>;
 }
 
 export class GameRoom {
@@ -74,8 +95,13 @@ export class GameRoom {
   private players: Map<string, PlayerState> = new Map();
   private privateStates: Map<string, LocalPlayerPrivateState> = new Map();
   private sockets: Map<string, Socket<ClientToServerEvents, ServerToClientEvents>> = new Map();
+  private socketToToken: Map<string, string> = new Map();
+  private savedProfiles: Map<string, SavedPlayerProfile> = new Map();
   private lastActionTime: Map<string, number> = new Map();
   private lastDodgeTime: Map<string, number> = new Map();
+  private lastTeleportTime: Map<string, number> = new Map();
+  private lastPingTime: Map<string, number> = new Map();
+  private activePings: WorldPing[] = [];
   private nodes: Map<string, ResourceNodeState> = new Map();
   private structures: Map<string, StructureState> = new Map();
   private boats: Map<string, BoatState> = new Map();
@@ -222,7 +248,12 @@ export class GameRoom {
       }
       if (Array.isArray(data.boats)) {
         for (const b of data.boats) {
-          this.boats.set(b.id, { ...b, pilotId: null, speed: 0, vx: 0, vz: 0, throttle: 0 });
+          this.boats.set(b.id, { ...b, pilotId: null, passengerIds: [], speed: 0, vx: 0, vz: 0, throttle: 0 });
+        }
+      }
+      if (data.profiles && typeof data.profiles === 'object') {
+        for (const [tok, prof] of Object.entries(data.profiles)) {
+          this.savedProfiles.set(tok, prof);
         }
       }
       this.ensureStarterBoat();
@@ -232,14 +263,60 @@ export class GameRoom {
     }
   }
 
+  private savePlayerProfile(socketId: string): void {
+    const tok = this.socketToToken.get(socketId);
+    const p = this.players.get(socketId);
+    const priv = this.privateStates.get(socketId);
+    if (!tok || !p || !priv || p.isBot) return;
+    this.savedProfiles.set(tok, {
+      name: p.name,
+      outfit: p.outfit,
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      level: p.level,
+      xp: p.xp,
+      kills: p.kills,
+      daysSurvived: p.daysSurvived,
+      bedPos: p.bedPos,
+      equippedSlot: p.equippedSlot,
+      armorItemId: p.armorItemId,
+      armorRating: p.armorRating,
+      vitals: { ...p.vitals },
+      privateState: JSON.parse(JSON.stringify(priv)) as LocalPlayerPrivateState,
+      savedAt: Date.now(),
+    });
+  }
+
+  private assignRoomHost(): void {
+    let hostAssigned = false;
+    for (const p of this.players.values()) {
+      if (p.isBot) continue;
+      if (!hostAssigned) {
+        p.isHost = true;
+        hostAssigned = true;
+      } else {
+        p.isHost = false;
+      }
+    }
+  }
+
   private saveToDisk(): void {
     try {
+      for (const sid of this.sockets.keys()) {
+        this.savePlayerProfile(sid);
+      }
+      const profilesObj: Record<string, SavedPlayerProfile> = {};
+      for (const [k, v] of this.savedProfiles.entries()) {
+        profilesObj[k] = v;
+      }
       const payload: PersistedRoomData = {
         seed: this.seed,
         day: this.time.day,
         timeOfDay: this.time.timeOfDay,
         structures: Array.from(this.structures.values()),
-        boats: Array.from(this.boats.values()).map((b) => ({ ...b, pilotId: null })),
+        boats: Array.from(this.boats.values()).map((b) => ({ ...b, pilotId: null, passengerIds: [] })),
+        profiles: profilesObj,
       };
       fs.writeFileSync(this.dataFile, JSON.stringify(payload), 'utf8');
     } catch {
@@ -291,16 +368,27 @@ export class GameRoom {
     const y = this.world.getHeight(x, z);
 
     const safeName = (payload.playerName || 'Survivor').trim().slice(0, 18) || 'Survivor';
-    const inv = createStarterInventory();
+
+    const token =
+      typeof payload.playerToken === 'string' && payload.playerToken.length >= 6
+        ? payload.playerToken.slice(0, 64)
+        : undefined;
+    const restored = token ? this.savedProfiles.get(token) : undefined;
+    if (token) this.socketToToken.set(socket.id, token);
+
+    const inv = restored ? JSON.parse(JSON.stringify(restored.privateState.inventory)) : createStarterInventory();
+    const startX = restored ? clamp(restored.x, -210, 210) : x;
+    const startZ = restored ? clamp(restored.z, -210, 210) : z;
+    const startY = restored ? Math.max(this.getSupportHeight(startX, startZ), WATER_LEVEL + 0.1) : y;
 
     const player: PlayerState = {
       id: socket.id,
       name: safeName,
       isBot: false,
-      outfit: payload.outfit || 'ranger',
-      x,
-      y,
-      z,
+      outfit: payload.outfit || restored?.outfit || 'ranger',
+      x: startX,
+      y: startY,
+      z: startZ,
       vx: 0,
       vy: 0,
       vz: 0,
@@ -308,19 +396,26 @@ export class GameRoom {
       pitch: 0,
       anim: 'idle',
       swingTime: 0,
-      equippedSlot: 0,
-      equippedItemId: inv[0]?.itemId ?? null,
-      armorItemId: null,
-      armorRating: 0,
-      vitals: {
-        hp: 100,
-        maxHp: 100,
-        stamina: 100,
-        maxStamina: 100,
-        hunger: 92,
-        thirst: 92,
-        warmth: 58,
-      },
+      equippedSlot: restored?.equippedSlot ?? 0,
+      equippedItemId: inv[restored?.equippedSlot ?? 0]?.itemId ?? null,
+      armorItemId: restored?.armorItemId ?? null,
+      armorRating: restored?.armorRating ?? 0,
+      vitals: restored
+        ? {
+            ...restored.vitals,
+            hp: Math.max(30, restored.vitals.hp),
+            hunger: Math.max(35, restored.vitals.hunger),
+            thirst: Math.max(35, restored.vitals.thirst),
+          }
+        : {
+            hp: 100,
+            maxHp: 100,
+            stamina: 100,
+            maxStamina: 100,
+            hunger: 92,
+            thirst: 92,
+            warmth: 58,
+          },
       status: {
         sheltered: false,
         warm: true,
@@ -335,34 +430,43 @@ export class GameRoom {
         nearFreshWater: false,
       },
       alive: true,
+      downed: false,
       respawnAt: 0,
-      bedPos: null,
+      bedPos: restored?.bedPos ?? null,
       pvpEnabled: false,
-      level: 1,
-      xp: 0,
-      kills: 0,
-      daysSurvived: 1,
+      level: restored?.level ?? 1,
+      xp: restored?.xp ?? 0,
+      kills: restored?.kills ?? 0,
+      daysSurvived: restored?.daysSurvived ?? 1,
       emote: null,
       emoteUntil: 0,
       boatId: null,
+      isHost: false,
     };
 
-    const priv: LocalPlayerPrivateState = {
-      inventory: inv,
-      armorSlot: null,
-      objectives: {
-        gather_resources: false,
-        craft_tool: false,
-        build_shelter: false,
-        cook_food: false,
-        hunt_wildlife: false,
-        smelt_iron: false,
-      },
-    };
+    const priv: LocalPlayerPrivateState = restored
+      ? {
+          inventory: inv,
+          armorSlot: restored.privateState.armorSlot ?? null,
+          objectives: { ...restored.privateState.objectives },
+        }
+      : {
+          inventory: inv,
+          armorSlot: null,
+          objectives: {
+            gather_resources: false,
+            craft_tool: false,
+            build_shelter: false,
+            cook_food: false,
+            hunt_wildlife: false,
+            smelt_iron: false,
+          },
+        };
 
     this.players.set(socket.id, player);
     this.privateStates.set(socket.id, priv);
     this.sockets.set(socket.id, socket);
+    this.assignRoomHost();
     socket.join(this.id);
 
     // Spawn 1 transparent AI companion on request when room has no bots yet
@@ -370,7 +474,14 @@ export class GameRoom {
       this.spawnCompanionBot();
     }
 
-    this.addSystemMessage(`${safeName} arrived on the island.`);
+    this.addSystemMessage(
+      restored
+        ? `${safeName} reconnected to the island (progress restored!).`
+        : `${safeName} arrived on the island.`
+    );
+
+    const now = Date.now();
+    this.activePings = this.activePings.filter((pg) => pg.expiresAt > now);
 
     return {
       playerId: socket.id,
@@ -385,6 +496,7 @@ export class GameRoom {
       wildlife: this.wildlife.getSnapshots(),
       loot: Array.from(this.loot.values()),
       chatHistory: this.chatHistory.slice(-24),
+      pings: [...this.activePings],
     };
   }
 
@@ -399,26 +511,38 @@ export class GameRoom {
   removePlayer(socketId: string): void {
     const p = this.players.get(socketId);
     if (!p) return;
+    this.savePlayerProfile(socketId);
     if (p.boatId) {
       const boat = this.boats.get(p.boatId);
-      if (boat && boat.pilotId === socketId) {
-        boat.pilotId = null;
-        boat.throttle = 0;
-        this.boatSteerInputs.delete(boat.id);
+      if (boat) {
+        if (boat.pilotId === socketId) {
+          boat.pilotId = null;
+          boat.throttle = 0;
+          this.boatSteerInputs.delete(boat.id);
+        }
+        if (boat.passengerIds) {
+          boat.passengerIds = boat.passengerIds.filter((id) => id !== socketId);
+        }
       }
     }
+    this.socketToToken.delete(socketId);
     this.players.delete(socketId);
     this.privateStates.delete(socketId);
     this.sockets.delete(socketId);
-    this.addSystemMessage(`${p.name} left the island.`);
+    this.assignRoomHost();
+    this.addSystemMessage(`${p.name} left the island (gear safely saved).`);
+    this.saveToDisk();
   }
 
   handleInput(socketId: string, input: PlayerInputPayload): void {
     const p = this.players.get(socketId);
-    if (!p || !p.alive) return;
+    if (!p || !p.alive || p.downed) return;
     if (p.boatId) {
-      // While piloting a vessel, keep player synced to the helm (only update look pitch)
+      // Passengers & pilots keep their world yaw/pitch so passengers can aim bows/fishing rods from deck!
       p.pitch = clamp(input.pitch, -1.5, 1.5);
+      if ((p.boatSeatIndex ?? 0) > 0) {
+        p.yaw = input.yaw;
+      }
       return;
     }
 
@@ -1102,43 +1226,68 @@ export class GameRoom {
 
   handleBoardBoat(socketId: string, boatId: string | null): void {
     const p = this.players.get(socketId);
-    if (!p || !p.alive) return;
+    if (!p || !p.alive || p.downed) return;
 
-    // Disembark current boat
+    // Disembark current boat (pilot OR crew passenger!)
     if (p.boatId) {
       const current = this.boats.get(p.boatId);
-      if (current && current.pilotId === socketId) {
-        current.pilotId = null;
-        current.throttle = 0;
-        this.boatSteerInputs.delete(current.id);
+      if (current) {
+        if (current.pilotId === socketId) {
+          current.pilotId = null;
+          current.throttle = 0;
+          this.boatSteerInputs.delete(current.id);
+        }
+        if (current.passengerIds) {
+          current.passengerIds = current.passengerIds.filter((id) => id !== socketId);
+        }
         // Place player smoothly beside the boat
-        const sideX = Math.cos(current.yaw) * 1.9;
-        const sideZ = -Math.sin(current.yaw) * 1.9;
+        const sideX = Math.cos(current.yaw) * 2.05;
+        const sideZ = -Math.sin(current.yaw) * 2.05;
         p.x = clamp(current.x + sideX, -212, 212);
         p.z = clamp(current.z + sideZ, -212, 212);
         p.y = Math.max(WATER_LEVEL + 0.25, this.world.getHeight(p.x, p.z) + 0.15);
       }
       p.boatId = null;
-      this.notify(socketId, 'Stepped off the helm.', 'info');
+      p.boatSeatIndex = undefined;
+      this.notify(socketId, 'Disembarked vessel.', 'info');
       return;
     }
 
     if (!boatId) return;
     const boat = this.boats.get(boatId);
     if (!boat) return;
-    if (Math.hypot(boat.x - p.x, boat.z - p.z) > 7.5) {
+    const def = BOATS[boat.kind];
+    if (Math.hypot(boat.x - p.x, boat.z - p.z) > 8.5) {
       this.notify(socketId, 'Swim or walk closer to board this vessel.', 'warn');
       return;
     }
-    if (boat.pilotId && boat.pilotId !== socketId) {
-      this.notify(socketId, 'Another survivor is already at the helm!', 'warn');
+    if (!boat.passengerIds) boat.passengerIds = [];
+
+    // 1. Take Helm if unoccupied
+    if (!boat.pilotId) {
+      boat.pilotId = socketId;
+      p.boatId = boat.id;
+      p.boatSeatIndex = 0;
+      p.anim = 'idle';
+      this.notify(socketId, `Took the helm of ${def.name}! [W/S] Sails • [A/D] Steer • [E] Disembark`, 'good');
       return;
     }
 
-    boat.pilotId = socketId;
-    p.boatId = boat.id;
-    p.anim = 'idle';
-    this.notify(socketId, `Took the helm of ${BOATS[boat.kind].name}! [W/S] Sails • [A/D] Steer • [E] Disembark`, 'good');
+    // 2. Otherwise board as a Multi-Player Crew Passenger!
+    if (boat.passengerIds.length < def.maxCrew - 1) {
+      boat.passengerIds.push(socketId);
+      p.boatId = boat.id;
+      p.boatSeatIndex = boat.passengerIds.length;
+      p.anim = 'idle';
+      this.notify(
+        socketId,
+        `Boarded ${def.name} as Crew (${1 + boat.passengerIds.length}/${def.maxCrew})! Fire bows, fish, or press [E] to disembark.`,
+        'good'
+      );
+      return;
+    }
+
+    this.notify(socketId, `${def.name} is at full crew capacity (${def.maxCrew}/${def.maxCrew})!`, 'warn');
   }
 
   handleBoatControl(socketId: string, payload: BoatControlPayload): void {
@@ -1281,13 +1430,15 @@ export class GameRoom {
   handleRespawn(socketId: string): void {
     const p = this.players.get(socketId);
     const priv = this.privateStates.get(socketId);
-    if (!p || !priv || p.alive) return;
+    if (!p || !priv || (p.alive && !p.downed)) return;
 
     const target = p.bedPos ?? this.world.getSpawnPoint();
     p.x = target.x + (Math.random() - 0.5) * 1.6;
     p.z = target.z + (Math.random() - 0.5) * 1.6;
     p.y = this.getSupportHeight(p.x, p.z);
     p.alive = true;
+    p.downed = false;
+    p.downedUntil = undefined;
     p.anim = 'idle';
     p.vitals = {
       hp: p.vitals.maxHp,
@@ -1306,6 +1457,86 @@ export class GameRoom {
     p.equippedItemId = priv.inventory[p.equippedSlot]?.itemId ?? null;
     this.sendPrivateState(socketId);
     this.notify(socketId, 'You awaken refreshed at camp.', 'info');
+  }
+
+  handleWorldPing(socketId: string, payload: { x: number; y: number; z: number; label?: string }): void {
+    const p = this.players.get(socketId);
+    if (!p || !p.alive) return;
+    const now = Date.now();
+    if (now - (this.lastPingTime.get(socketId) ?? 0) < 1800) return;
+    this.lastPingTime.set(socketId, now);
+
+    const ping: WorldPing = {
+      id: `ping_${this.nextEntitySeq++}`,
+      senderId: p.id,
+      senderName: p.name,
+      x: clamp(payload.x, -216, 216),
+      y: clamp(payload.y, -2, 60),
+      z: clamp(payload.z, -216, 216),
+      label: (payload.label || 'Waypoint').slice(0, 36),
+      color: p.isHost ? '#fbbf24' : '#2dd4bf',
+      createdAt: now,
+      expiresAt: now + 14_000,
+    };
+    this.activePings.push(ping);
+    if (this.activePings.length > 12) this.activePings.shift();
+    this.io.to(this.id).emit('world:ping', ping);
+  }
+
+  handleRevive(socketId: string, targetPlayerId: string): void {
+    const reviver = this.players.get(socketId);
+    const target = this.players.get(targetPlayerId);
+    if (!reviver || !target || !reviver.alive || reviver.downed || !target.downed) return;
+    if (Math.hypot(target.x - reviver.x, target.z - reviver.z) > 5.5) {
+      this.notify(socketId, 'Move closer to revive your teammate!', 'warn');
+      return;
+    }
+
+    target.downed = false;
+    target.downedUntil = undefined;
+    target.alive = true;
+    target.anim = 'idle';
+    target.vitals.hp = Math.round(target.vitals.maxHp * 0.5);
+    this.grantXp(reviver, 35);
+    this.io.to(this.id).emit('fx:event', { kind: 'levelup', x: target.x, y: target.y + 1.2, z: target.z });
+    this.emitCombatText(target.x, target.y + 2.2, target.z, `REVIVED BY ${reviver.name}!`, '#38f2dc', 'heal');
+    this.addSystemMessage(`${reviver.name} revived ${target.name} in the wild!`);
+    this.notify(targetPlayerId, `${reviver.name} pulled you back up!`, 'good');
+    this.notify(socketId, `Revived ${target.name}! (+35 XP)`, 'good');
+  }
+
+  handleTeleportToFriend(socketId: string, targetPlayerId: string): void {
+    const p = this.players.get(socketId);
+    const friend = this.players.get(targetPlayerId);
+    if (!p || !friend || !p.alive || p.downed || !friend.alive || p.id === friend.id) return;
+
+    const now = Date.now();
+    const last = this.lastTeleportTime.get(socketId) ?? 0;
+    const cdLeft = Math.ceil((45_000 - (now - last)) / 1000);
+    if (cdLeft > 0) {
+      this.notify(socketId, `Co-op Rally on cooldown (${cdLeft}s left).`, 'warn');
+      return;
+    }
+    this.lastTeleportTime.set(socketId, now);
+
+    // Disembark current boat cleanly if piloting/riding one
+    if (p.boatId) this.handleBoardBoat(socketId, null);
+
+    p.x = clamp(friend.x + (Math.random() - 0.5) * 2.4, -210, 210);
+    p.z = clamp(friend.z + (Math.random() - 0.5) * 2.4, -210, 210);
+    p.y = Math.max(this.getSupportHeight(p.x, p.z), WATER_LEVEL + 0.2);
+
+    // If friend is on a boat with spare seats, auto-board as crew!
+    if (friend.boatId) {
+      const b = this.boats.get(friend.boatId);
+      if (b && (b.passengerIds?.length ?? 0) < BOATS[b.kind].maxCrew - 1) {
+        this.handleBoardBoat(socketId, b.id);
+      }
+    }
+
+    this.io.to(this.id).emit('fx:event', { kind: 'levelup', x: p.x, y: p.y + 1, z: p.z });
+    this.notify(socketId, `Rallied to ${friend.name}!`, 'good');
+    this.notify(targetPlayerId, `${p.name} rallied to your location!`, 'info');
   }
 
   handleTogglePvp(socketId: string): void {
@@ -1620,6 +1851,19 @@ export class GameRoom {
     isNight: boolean,
     structures: StructureState[]
   ): void {
+    const now = Date.now();
+    if (p.downed) {
+      if (p.downedUntil && now >= p.downedUntil) {
+        p.alive = false;
+        p.downed = false;
+        p.downedUntil = undefined;
+        p.anim = 'dead';
+        p.respawnAt = now + 2500;
+        this.addSystemMessage(`${p.name} succumbed to their wounds.`);
+      }
+      return;
+    }
+
     // Check nearby stations, shelter, warmth, freshwater
     let nearCampfire = false;
     let nearWorkbench = false;
@@ -1776,7 +2020,7 @@ export class GameRoom {
       // Keep piloted player seated cleanly at the helm!
       if (b.pilotId) {
         const pilot = this.players.get(b.pilotId);
-        if (pilot && pilot.alive) {
+        if (pilot && pilot.alive && !pilot.downed) {
           pilot.x = b.x - fwdX * def.helmOffsetZ;
           pilot.z = b.z - fwdZ * def.helmOffsetZ;
           pilot.y = WATER_LEVEL + def.deckY;
@@ -1788,6 +2032,25 @@ export class GameRoom {
         } else {
           b.pilotId = null;
         }
+      }
+
+      // Keep Multi-Player Crew Passengers riding smoothly in their deck seats!
+      if (b.passengerIds && b.passengerIds.length > 0) {
+        const rightX = Math.cos(b.yaw);
+        const rightZ = -Math.sin(b.yaw);
+        b.passengerIds = b.passengerIds.filter((pid, idx) => {
+          const pax = this.players.get(pid);
+          if (!pax || !pax.alive || pax.downed || pax.boatId !== b.id) return false;
+          const seat = def.passengerOffsets[idx] ?? [0, 0];
+          pax.x = b.x + rightX * seat[0] - fwdX * seat[1];
+          pax.z = b.z + rightZ * seat[0] - fwdZ * seat[1];
+          pax.y = WATER_LEVEL + def.deckY;
+          pax.vx = b.vx;
+          pax.vz = b.vz;
+          pax.boatSeatIndex = idx + 1;
+          pax.status.wet = false;
+          return true;
+        });
       }
 
       // Ramming speed damage against Sea Serpents!
@@ -1841,7 +2104,27 @@ export class GameRoom {
   }
 
   private killPlayer(p: PlayerState, cause: string): void {
+    // Disembark if killed while on a boat
+    if (p.boatId) this.handleBoardBoat(p.id, null);
+
+    // Co-op Downed State when another alive human survivor is in the room!
+    const hasHumanTeammate =
+      !p.isBot &&
+      Array.from(this.players.values()).some((o) => !o.isBot && o.id !== p.id && o.alive && !o.downed);
+
+    if (hasHumanTeammate && !p.downed) {
+      p.downed = true;
+      p.downedUntil = Date.now() + 30_000;
+      p.anim = 'dead';
+      p.vitals.hp = 1;
+      this.addSystemMessage(`⚠ ${p.name} was downed by ${cause}! Run over and press [E] to revive within 30s!`);
+      this.notify(p.id, 'You are DOWNED! Wait for a teammate to revive you or press Awaken at Camp.', 'danger');
+      return;
+    }
+
     p.alive = false;
+    p.downed = false;
+    p.downedUntil = undefined;
     p.anim = 'dead';
     p.respawnAt = Date.now() + 3000;
     this.addSystemMessage(`${p.name} fell to ${cause}.`);

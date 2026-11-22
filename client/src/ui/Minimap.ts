@@ -6,6 +6,7 @@ import {
   type LandmarkInfo,
   type PlayerState,
   type StructureState,
+  type WorldPing,
 } from '@wildreach/shared';
 
 export class MinimapRenderer {
@@ -90,7 +91,8 @@ export class MinimapRenderer {
     players: PlayerState[],
     structures: StructureState[],
     landmarks: LandmarkInfo[],
-    boats: BoatState[] = []
+    boats: BoatState[] = [],
+    pings: WorldPing[] = []
   ): void {
     const ctx = this.hudCanvas.getContext('2d');
     if (!ctx) return;
@@ -154,6 +156,23 @@ export class MinimapRenderer {
       ctx.restore();
     }
 
+    // Pulsing 3D World Pings
+    const now = Date.now();
+    for (const pg of pings) {
+      if (now >= pg.expiresAt) continue;
+      const [pgx, pgy] = toHud(pg.x, pg.z);
+      const pulse = 5 + ((now * 0.012) % 7);
+      ctx.strokeStyle = pg.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(pgx, pgy, pulse, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(pgx, pgy, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     // Other players
     for (const p of players) {
       if (p.id === localId || !p.alive) continue;
@@ -192,7 +211,8 @@ export class MinimapRenderer {
     players: PlayerState[],
     structures: StructureState[],
     landmarks: LandmarkInfo[],
-    boats: BoatState[] = []
+    boats: BoatState[] = [],
+    pings: WorldPing[] = []
   ): void {
     const ctx = this.fullCanvas.getContext('2d');
     if (!ctx) return;
@@ -251,6 +271,20 @@ export class MinimapRenderer {
       ctx.fill();
       ctx.stroke();
       ctx.restore();
+    }
+
+    // Pulsing World Pings on Full Map
+    const now = Date.now();
+    for (const pg of pings) {
+      if (now >= pg.expiresAt) continue;
+      const [pgx, pgy] = this.worldToMap(pg.x, pg.z, size);
+      ctx.strokeStyle = pg.color;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(pgx, pgy, 11, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = pg.color;
+      ctx.fillText(`📍 ${pg.label}`, pgx, pgy - 14);
     }
 
     // Players

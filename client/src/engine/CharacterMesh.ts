@@ -23,6 +23,8 @@ export class CharacterVisual {
   private nameplateSprite: THREE.Sprite | null = null;
   private nameplateCanvas: HTMLCanvasElement | null = null;
   private lastLabelKey = '';
+  private chatBubbleText = '';
+  private chatBubbleUntil = 0;
   private currentItemId: string | null = null;
   private currentArmorId: string | null = null;
   private animClock = 0;
@@ -236,6 +238,29 @@ export class CharacterVisual {
       const mallet = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.3), stoneMat);
       mallet.position.set(0, 0.1, 0.56);
       this.heldItemAnchor.add(handle, mallet);
+    } else if (itemId === 'fishing_rod') {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.032, 2.25, 6), woodMat);
+      pole.rotation.x = Math.PI * 0.36;
+      pole.position.set(0, 0.42, 0.85);
+      this.heldItemAnchor.add(pole);
+    } else if (itemId === 'spyglass') {
+      const brass = new THREE.MeshStandardMaterial({ color: '#d97706', metalness: 0.78, roughness: 0.25 });
+      const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.042, 0.46, 8), brass);
+      tube.rotation.x = Math.PI * 0.48;
+      tube.position.set(0, 0.08, 0.24);
+      this.heldItemAnchor.add(tube);
+    } else if (itemId === 'harpoon_spear' || itemId === 'volcanic_greataxe') {
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.038, 1.85, 6), woodMat);
+      shaft.rotation.x = Math.PI * 0.48;
+      shaft.position.set(0, 0.04, 0.58);
+      const tipMat =
+        itemId === 'volcanic_greataxe'
+          ? new THREE.MeshStandardMaterial({ color: '#f97316', emissive: '#ea580c', emissiveIntensity: 0.75 })
+          : ironMat;
+      const head = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.42, 5), tipMat);
+      head.rotation.x = Math.PI * 0.48;
+      head.position.set(0, 0.08, 1.56);
+      this.heldItemAnchor.add(shaft, head);
     }
   }
 
@@ -264,26 +289,60 @@ export class CharacterVisual {
     }
   }
 
+  setChatBubble(text: string): void {
+    this.chatBubbleText = text.slice(0, 34);
+    this.chatBubbleUntil = Date.now() + 5200;
+    this.lastLabelKey = '';
+  }
+
   updateNameplate(state: PlayerState): void {
     if (!this.nameplateCanvas || !this.nameplateSprite) return;
+    const now = Date.now();
+    const bubble = now < this.chatBubbleUntil ? this.chatBubbleText : '';
     const hpPct = Math.round((state.vitals.hp / Math.max(1, state.vitals.maxHp)) * 100);
-    const key = `${state.name}|${hpPct}|${state.pvpEnabled}|${state.emote ?? ''}`;
+    const key = `${state.name}|${state.level}|${hpPct}|${state.pvpEnabled}|${state.downed}|${state.isHost}|${state.emote ?? ''}|${bubble}`;
     if (key === this.lastLabelKey) return;
     this.lastLabelKey = key;
 
+    if (this.nameplateCanvas.height !== 108) {
+      this.nameplateCanvas.width = 320;
+      this.nameplateCanvas.height = 108;
+      this.nameplateSprite.scale.set(2.4, 0.82, 1);
+      this.nameplateSprite.position.y = 2.48;
+    }
+
     const ctx = this.nameplateCanvas.getContext('2d')!;
-    ctx.clearRect(0, 0, 256, 64);
+    ctx.clearRect(0, 0, 320, 108);
+
+    // Optional overhead speech bubble!
+    if (bubble) {
+      ctx.fillStyle = 'rgba(248, 250, 252, 0.94)';
+      ctx.beginPath();
+      ctx.roundRect(14, 4, 292, 34, 14);
+      ctx.fill();
+      ctx.font = '600 16px Inter, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText(`“${bubble}”`, 160, 27);
+    }
 
     // Subtle dark pill background
-    ctx.fillStyle = 'rgba(12, 18, 28, 0.72)';
+    ctx.fillStyle = state.downed ? 'rgba(127, 29, 29, 0.88)' : 'rgba(12, 18, 28, 0.78)';
     ctx.beginPath();
-    ctx.roundRect(18, 8, 220, 46, 12);
+    ctx.roundRect(24, 44, 272, 56, 14);
     ctx.fill();
 
-    // Name text
+    // Name + Host crown / level / emote
     ctx.font = 'bold 20px Inter, system-ui, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillStyle = state.isBot ? '#7dd3fc' : state.pvpEnabled ? '#fca5a5' : '#f8fafc';
+    ctx.fillStyle = state.downed
+      ? '#fecaca'
+      : state.isBot
+      ? '#7dd3fc'
+      : state.pvpEnabled
+      ? '#fca5a5'
+      : '#f8fafc';
+    const crown = state.isHost && !state.isBot ? '👑 ' : '';
     const emoteIcon =
       state.emote === 'wave'
         ? ' 👋'
@@ -294,13 +353,16 @@ export class CharacterVisual {
         : state.emote === 'camp'
         ? ' ⛺'
         : '';
-    ctx.fillText(`${state.name}${emoteIcon}`, 128, 32);
+    const title = state.downed
+      ? `⚠ ${state.name} — [E] REVIVE!`
+      : `${crown}${state.name} Lv.${state.level}${emoteIcon}`;
+    ctx.fillText(title, 160, 72);
 
     // Health bar
     ctx.fillStyle = 'rgba(255,255,255,0.18)';
-    ctx.fillRect(46, 40, 164, 7);
-    ctx.fillStyle = hpPct > 45 ? '#4ade80' : '#f87171';
-    ctx.fillRect(46, 40, (164 * hpPct) / 100, 7);
+    ctx.fillRect(54, 83, 212, 8);
+    ctx.fillStyle = state.downed ? '#f87171' : hpPct > 45 ? '#4ade80' : '#fb923c';
+    ctx.fillRect(54, 83, (212 * hpPct) / 100, 8);
 
     const tex = (this.nameplateSprite.material as THREE.SpriteMaterial).map!;
     tex.needsUpdate = true;

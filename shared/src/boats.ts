@@ -20,13 +20,15 @@ export interface BoatDef {
   cameraHeight: number;
   helmOffsetZ: number; // local Z behind center where pilot stands (positive = stern)
   deckY: number;
+  maxCrew: number; // total players including pilot
+  passengerOffsets: [number, number][]; // [localX, localZ] seats for crew passengers
 }
 
 export const BOATS: Record<BoatKind, BoatDef> = {
   raft: {
     kind: 'raft',
     name: 'Timber Raft',
-    description: 'Hand-lashed cedar raft with patchwork sail. Quick to craft for coastal crossings.',
+    description: 'Hand-lashed cedar raft with patchwork sail. Carries 2 survivors for coastal crossings.',
     maxHp: 320,
     costs: [
       { itemId: 'wood', count: 16 },
@@ -46,11 +48,13 @@ export const BOATS: Record<BoatKind, BoatDef> = {
     cameraHeight: 3.1,
     helmOffsetZ: 1.05,
     deckY: 0.28,
+    maxCrew: 2,
+    passengerOffsets: [[0, -0.75]],
   },
   skiff: {
     kind: 'skiff',
     name: 'Outrigger Skiff',
-    description: 'Agile copper-bound sailboat with brass lantern & 6-slot hold. Built to reach outer islands!',
+    description: 'Agile copper-bound sailboat with brass lantern, 6-slot hold & 3-player crew seating.',
     maxHp: 580,
     costs: [
       { itemId: 'wood', count: 24 },
@@ -72,11 +76,16 @@ export const BOATS: Record<BoatKind, BoatDef> = {
     cameraHeight: 3.8,
     helmOffsetZ: 1.55,
     deckY: 0.42,
+    maxCrew: 3,
+    passengerOffsets: [
+      [-0.55, -0.6],
+      [0.55, -0.6],
+    ],
   },
   longship: {
     kind: 'longship',
     name: 'Dragon Longship',
-    description: 'Ironbound Viking warship with dragon prow, painted shields, twin lanterns & 12-slot hold.',
+    description: 'Ironbound Viking warship with dragon prow, shields, 12-slot hold & 6-player warband crew!',
     maxHp: 1150,
     costs: [
       { itemId: 'wood', count: 36 },
@@ -98,6 +107,14 @@ export const BOATS: Record<BoatKind, BoatDef> = {
     cameraHeight: 4.9,
     helmOffsetZ: 2.55,
     deckY: 0.56,
+    maxCrew: 6,
+    passengerOffsets: [
+      [-0.85, 0.75],
+      [0.85, 0.75],
+      [-0.85, -0.85],
+      [0.85, -0.85],
+      [0, -2.35],
+    ],
   },
 };
 

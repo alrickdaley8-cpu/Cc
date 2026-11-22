@@ -10,8 +10,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <title>WILDREACH — 3D Multiplayer Survival</title>
-    <script type="module" crossorigin src="./assets/index-leTdH19Y.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-CrfC7OVC.css">
+    <script type="module" crossorigin src="./assets/index-B7hBsZxi.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CyVeGXsj.css">
   </head>
   <body>
     <canvas id="game-canvas"></canvas>
@@ -107,7 +107,14 @@
       <div class="hud-top">
         <div class="hud-chip" id="hud-clock">☀ Day 1 • 08:00 • CLEAR</div>
         <div class="hud-chip hud-compass" id="hud-compass">N 000° • Emerald Meadows</div>
-        <div class="hud-chip" id="hud-net">1 Online • 12ms • Lv.1</div>
+        <button class="hud-chip hud-net-btn" id="hud-net" type="button" title="Open Multiplayer Party & Invite [P]">
+          1 Online • 12ms • Lv.1
+        </button>
+      </div>
+
+      <!-- Auto-Reconnecting Banner -->
+      <div id="reconnect-banner" class="reconnect-banner hidden">
+        ⟳ Connection interrupted — automatically reconnecting & restoring your gear...
       </div>
 
       <!-- Top-Right Circular Minimap (clickable/tappable!) -->
@@ -132,7 +139,9 @@
       <div class="quick-bar">
         <button id="qbtn-pack" class="qbtn" type="button" title="Inventory [Tab]">🎒<span>Pack</span></button>
         <button id="qbtn-craft" class="qbtn" type="button" title="Crafting [C]">⚒<span>Craft</span></button>
-        <button id="qbtn-build" class="qbtn" type="button" title="Build [B]">🏗<span>Build</span></button>
+        <button id="qbtn-build" class="qbtn" type="button" title="Build & Boats [B]">🏗<span>Build</span></button>
+        <button id="qbtn-party" class="qbtn" type="button" title="Multiplayer Crew & Invite [P]">👥<span>Crew</span></button>
+        <button id="qbtn-ping" class="qbtn" type="button" title="Drop 3D World Ping [G]">📍<span>Ping</span></button>
         <button id="qbtn-cam" class="qbtn" type="button" title="Camera [V]">👁<span>Cam</span></button>
         <button id="qbtn-map" class="qbtn" type="button" title="Map [M]">🗺<span>Map</span></button>
         <button id="qbtn-chat" class="qbtn" type="button" title="Chat [Enter]">💬<span>Chat</span></button>
@@ -221,11 +230,12 @@
         <div class="shortcut-strip">
           <span>[Tab] Pack</span>
           <span>[C] Craft</span>
-          <span>[B] Build</span>
-          <span>[V] Camera</span>
+          <span>[B] Build/Boats</span>
+          <span>[P] Crew</span>
+          <span>[G] Ping</span>
+          <span>[V] Cam</span>
           <span>[Q] Dodge</span>
           <span>[Enter] Chat</span>
-          <span>[Esc] Menu</span>
         </div>
       </div>
 
@@ -280,11 +290,11 @@
       </div>
     </div>
 
-    <!-- Death & Respawn Overlay -->
+    <!-- Death / Co-op Downed Overlay -->
     <div id="death-overlay" class="modal-backdrop hidden">
       <div class="modal-card death-card">
-        <h2>YOU FELL IN THE WILD</h2>
-        <p>Your spirit drifts back toward the Sanctuary hearth (or your placed Camp Bedroll).</p>
+        <h2 id="death-title">YOU FELL IN THE WILD</h2>
+        <p id="death-desc">Your spirit drifts back toward the Sanctuary hearth (or your placed Camp Bedroll).</p>
         <button id="btn-respawn" class="btn-enter">AWAKEN AT CAMP</button>
       </div>
     </div>

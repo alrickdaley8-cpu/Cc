@@ -15,6 +15,7 @@ import type {
   StructureKind,
   StructureState,
   WildlifeState,
+  WorldPing,
   WorldTimeState,
 } from './types.js';
 
@@ -31,6 +32,7 @@ export interface JoinRoomPayload {
   playerName: string;
   outfit: PlayerOutfit;
   spawnAiCompanions?: boolean;
+  playerToken?: string; // persistent client token for seamless reconnect & profile restore
 }
 
 export interface PlayerInputPayload {
@@ -110,6 +112,7 @@ export interface WorldInitPayload {
   wildlife: WildlifeState[];
   loot: LootDropState[];
   chatHistory: ChatMessage[];
+  pings?: WorldPing[];
 }
 
 export interface WorldSnapshotPayload {
@@ -141,6 +144,9 @@ export interface ClientToServerEvents {
   'boat:control': (payload: BoatControlPayload) => void;
   'boat:chestTransfer': (payload: BoatChestTransferPayload) => void;
   'player:fishCatch': (payload: { deepWater: boolean }) => void;
+  'player:pingWorld': (payload: { x: number; y: number; z: number; label?: string }) => void;
+  'player:revive': (targetPlayerId: string) => void;
+  'player:teleportToFriend': (targetPlayerId: string) => void;
   'player:respawn': () => void;
   'player:togglePvp': () => void;
   'player:emote': (emote: string) => void;
@@ -171,5 +177,6 @@ export interface ServerToClientEvents {
     color?: string;
   }) => void;
   'chat:message': (msg: ChatMessage) => void;
+  'world:ping': (ping: WorldPing) => void;
   'toast:notify': (payload: { text: string; tone?: 'info' | 'good' | 'warn' | 'danger' }) => void;
 }

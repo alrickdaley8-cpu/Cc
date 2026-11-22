@@ -36,9 +36,11 @@ import {
   type WildlifeKind,
   type WildlifeState,
   type WorldInitPayload,
+  type WorldPing,
   type WorldTimeState,
 } from '@wildreach/shared';
 import type { NetworkHandlers } from './NetworkClient';
+import { startUnthrottledInterval } from './P2PMultiplayerBridge';
 
 interface LocalWildlife extends WildlifeState {
   homeX: number;
@@ -59,24 +61,28 @@ const MOB_CFG: Record<
   boar: { maxHp: 95, walk: 2.4, run: 6.0, dmg: 14, hostile: true, xp: 35, drops: [['raw_meat', 2, 4], ['hide', 1, 3]] },
   wolf: { maxHp: 115, walk: 3.0, run: 7.1, dmg: 20, hostile: true, xp: 48, drops: [['raw_meat', 1, 3], ['hide', 2, 3], ['fang', 1, 2]] },
   stalker: { maxHp: 185, walk: 3.4, run: 7.6, dmg: 26, hostile: true, xp: 95, drops: [['shadow_essence', 1, 3], ['ancient_shard', 1, 2]] },
-  crab: { maxHp: 55, walk: 2.2, run: 4.4, dmg: 9, hostile: true, xp: 22, drops: [['crab_meat', 1, 3], ['sea_pearl', 1, 1]] },
-  serpent: { maxHp: 260, walk: 4.5, run: 8.5, dmg: 26, hostile: true, xp: 120, drops: [['serpent_scale', 2, 4], ['serpent_meat', 2, 4]] },
-  cinder_golem: { maxHp: 420, walk: 2.4, run: 5.2, dmg: 36, hostile: true, xp: 180, drops: [['obsidian', 3, 5], ['iron_ingot', 2, 4], ['ancient_shard', 2, 3], ['gold_coin', 5, 10]] },
+  crab: { maxHp: 55, walk: 2.2, run: 4.4, dmg: 9, hostile: true, xp: 22, drops: [['crab_claw', 1, 2], ['sea_pearl', 1, 1]] },
+  serpent: { maxHp: 260, walk: 4.5, run: 8.5, dmg: 26, hostile: true, xp: 120, drops: [['serpent_scale', 2, 4], ['raw_fish', 2, 4]] },
+  cinder_golem: { maxHp: 420, walk: 2.4, run: 5.2, dmg: 36, hostile: true, xp: 180, drops: [['obsidian', 3, 5], ['volcanic_core', 1, 2], ['ancient_shard', 2, 3], ['sunken_gold', 3, 6]] },
 };
 
 /**
- * Full client-side simulation engine used automatically when WILDREACH is opened
- * on static hosting like GitHub Pages (with zero backend required), while keeping
- * 100% parity with the authoritative Socket.IO server protocol.
+ * Full client-side simulation & P2P Host engine used automatically when WILDREACH
+ * runs on GitHub Pages / static hosts (zero backend required!). Supports both solo
+ * play AND real-time multi-player WebRTC P2P friends joining the host's world!
  */
 export class LocalGameEngine {
   private handlers: NetworkHandlers;
   private world!: WorldGenerator;
   private roomId = 'emerald-archipelago';
-  private roomName = 'Emerald Archipelago (Offline / GitHub Pages)';
+  private roomName = 'Emerald Archipelago (P2P Host)';
   private seed = 42077;
 
   private localPlayer!: PlayerState;
+  private remotePeers = new Map<string, { player: PlayerState; priv: LocalPlayerPrivateState }>();
+  private boatSteers = new Map<string, number>();
+  private activePings: WorldPing[] = [];
+  private broadcastHook: ((event: string, data: unknown, targetPeerId?: string) => void) | null = null;
   private bots: (PlayerState & { homeX: number; homeZ: number; goalX: number; goalZ: number; timer: number; cd: number })[] = [];
   private priv!: LocalPlayerPrivateState;
   private nodes = new Map<string, ResourceNodeState>();
@@ -86,6 +92,7 @@ export class LocalGameEngine {
   private wildlife = new Map<string, LocalWildlife>();
   private loot = new Map<string, LootDropState>();
   private projectiles = new Map<string, ProjectileState & { bornAt: number }>();
+  private stopTicker: (() => void) | null = null;
 
   private time: WorldTimeState = {
     day: 1,
@@ -202,10 +209,11 @@ export class LocalGameEngine {
       this.spawnBot();
     }
 
+    this.localPlayer.isHost = true;
     this.spawnInitialWildlife();
 
     this.lastTick = performance.now();
-    this.timer = globalThis.setInterval(() => {
+    this.stopTicker = startUnthrottledInterval(() => {
       const now = performance.now();
       const dt = Math.min(0.1, (now - this.lastTick) / 1000);
       this.lastTick = now;
@@ -216,7 +224,7 @@ export class LocalGameEngine {
       id: 'sys_welcome',
       senderId: 'system',
       senderName: 'Wildreach',
-      text: 'Running in Local World Mode (auto-saved in browser). Add a server URL in the lobby for online co-op!',
+      text: 'Hosting Live P2P World! Share your 🔗 Invite Link so friends can join this island directly over WebRTC!',
       kind: 'system',
       timestamp: Date.now(),
     };
@@ -227,15 +235,15 @@ export class LocalGameEngine {
         id: this.roomId,
         name: this.roomName,
         seed: this.seed,
-        playerCount: 1,
-        maxPlayers: 1,
+        playerCount: 1 + this.remotePeers.size,
+        maxPlayers: 12,
         day: this.time.day,
         weather: this.time.weather,
         pvpEnabled: false,
       },
       landmarks: this.world.landmarks,
       time: { ...this.time },
-      players: [this.localPlayer, ...this.bots],
+      players: this.getAllPlayers(),
       privateState: this.priv,
       nodes: Array.from(this.nodes.values()),
       structures: Array.from(this.structures.values()),
@@ -243,7 +251,408 @@ export class LocalGameEngine {
       wildlife: this.getWildlifeSnap(),
       loot: Array.from(this.loot.values()),
       chatHistory: [welcome],
+      pings: [...this.activePings],
     };
+  }
+
+  setBroadcastHook(fn: ((event: string, data: unknown, targetPeerId?: string) => void) | null): void {
+    this.broadcastHook = fn;
+  }
+
+  getRoomMeta(): { roomName: string; seed: number; playerCount: number } {
+    return {
+      roomName: this.roomName,
+      seed: this.seed,
+      playerCount: 1 + this.remotePeers.size,
+    };
+  }
+
+  private getAllPlayers(): PlayerState[] {
+    const out: PlayerState[] = [this.localPlayer];
+    for (const r of this.remotePeers.values()) out.push(r.player);
+    for (const b of this.bots) out.push(b);
+    return out;
+  }
+
+  private relay(event: string, data: unknown, targetPeerId?: string): void {
+    this.broadcastHook?.(event, data, targetPeerId);
+  }
+
+  /**
+   * Accepts a remote WebRTC/BroadcastChannel friend into the Host's live world!
+   */
+  addRemotePeer(peerId: string, payload: JoinRoomPayload): WorldInitPayload {
+    const spawn = this.world.getSpawnPoint();
+    const ang = Math.random() * Math.PI * 2;
+    const x = spawn.x + Math.cos(ang) * 3.5;
+    const z = spawn.z + Math.sin(ang) * 3.5;
+    const y = this.world.getHeight(x, z);
+    const inv: (InventorySlot | null)[] = Array.from({ length: INVENTORY_SIZE }, () => null);
+    inv[0] = { itemId: 'stone_axe', count: 1, durability: 75 };
+    inv[1] = { itemId: 'stone_pickaxe', count: 1, durability: 75 };
+    inv[2] = { itemId: 'torch', count: 1, durability: 180 };
+    inv[3] = { itemId: 'berries', count: 6 };
+    inv[4] = { itemId: 'build_hammer', count: 1, durability: 160 };
+    inv[5] = { itemId: 'fishing_rod', count: 1, durability: 80 };
+
+    const safeName = (payload.playerName || 'Voyager').trim().slice(0, 18) || 'Voyager';
+    const player: PlayerState = {
+      id: peerId,
+      name: safeName,
+      isBot: false,
+      outfit: payload.outfit || 'mariner',
+      x,
+      y,
+      z,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      yaw: Math.PI,
+      pitch: 0,
+      anim: 'idle',
+      swingTime: 0,
+      equippedSlot: 0,
+      equippedItemId: inv[0]?.itemId ?? null,
+      armorItemId: null,
+      armorRating: 0,
+      vitals: { hp: 100, maxHp: 100, stamina: 100, maxStamina: 100, hunger: 92, thirst: 92, warmth: 58 },
+      status: {
+        sheltered: false, warm: true, wellFed: true, wet: false, chilled: false,
+        nearCampfire: false, nearWorkbench: false, nearFurnace: false,
+        nearRunicForge: false, nearCauldron: false, nearFreshWater: false,
+      },
+      alive: true,
+      downed: false,
+      respawnAt: 0,
+      bedPos: null,
+      pvpEnabled: false,
+      level: 1,
+      xp: 0,
+      kills: 0,
+      daysSurvived: 1,
+      emote: null,
+      emoteUntil: 0,
+      boatId: null,
+      isHost: false,
+    };
+    const priv: LocalPlayerPrivateState = {
+      inventory: inv,
+      armorSlot: null,
+      objectives: {
+        gather_resources: false,
+        craft_tool: false,
+        build_shelter: false,
+        cook_food: false,
+        hunt_wildlife: false,
+        smelt_iron: false,
+      },
+    };
+    this.remotePeers.set(peerId, { player, priv });
+
+    const joinMsg: ChatMessage = {
+      id: `sys_${this.seq++}`,
+      senderId: 'system',
+      senderName: 'Wildreach',
+      text: `⚡ ${safeName} joined your island over WebRTC P2P!`,
+      kind: 'system',
+      timestamp: Date.now(),
+    };
+    this.handlers.onChatMessage(joinMsg);
+    this.handlers.onToast({ text: `${safeName} joined your world!`, tone: 'good' });
+    this.relay('chat:message', joinMsg);
+
+    return {
+      playerId: peerId,
+      room: {
+        id: this.roomId,
+        name: this.roomName,
+        seed: this.seed,
+        playerCount: 1 + this.remotePeers.size,
+        maxPlayers: 12,
+        day: this.time.day,
+        weather: this.time.weather,
+        pvpEnabled: false,
+      },
+      landmarks: this.world.landmarks,
+      time: { ...this.time },
+      players: this.getAllPlayers(),
+      privateState: priv,
+      nodes: Array.from(this.nodes.values()),
+      structures: Array.from(this.structures.values()),
+      boats: Array.from(this.boats.values()),
+      wildlife: this.getWildlifeSnap(),
+      loot: Array.from(this.loot.values()),
+      chatHistory: [joinMsg],
+      pings: [...this.activePings],
+    };
+  }
+
+  removeRemotePeer(peerId: string): void {
+    const entry = this.remotePeers.get(peerId);
+    if (!entry) return;
+    const p = entry.player;
+    if (p.boatId) {
+      const b = this.boats.get(p.boatId);
+      if (b) {
+        if (b.pilotId === peerId) {
+          b.pilotId = null;
+          b.throttle = 0;
+        }
+        if (b.passengerIds) {
+          b.passengerIds = b.passengerIds.filter((id) => id !== peerId);
+        }
+      }
+    }
+    this.remotePeers.delete(peerId);
+    const msg: ChatMessage = {
+      id: `sys_${this.seq++}`,
+      senderId: 'system',
+      senderName: 'Wildreach',
+      text: `${p.name} disconnected from the island.`,
+      kind: 'system',
+      timestamp: Date.now(),
+    };
+    this.handlers.onChatMessage(msg);
+    this.relay('chat:message', msg);
+  }
+
+  /**
+   * Executes any gameplay event received from a connected WebRTC P2P friend!
+   */
+  handlePeerCommand(peerId: string, event: string, data: unknown): void {
+    const entry = this.remotePeers.get(peerId);
+    if (!entry) return;
+    const p = entry.player;
+    const priv = entry.priv;
+
+    const addPeerItem = (itemId: string, count: number, durability?: number): void => {
+      const def = getItem(itemId);
+      if (!def) return;
+      let rem = count;
+      if (def.maxStack > 1) {
+        for (const s of priv.inventory) {
+          if (s && s.itemId === itemId && s.count < def.maxStack) {
+            const add = Math.min(rem, def.maxStack - s.count);
+            s.count += add;
+            rem -= add;
+            if (rem <= 0) break;
+          }
+        }
+      }
+      for (let i = 0; i < priv.inventory.length && rem > 0; i++) {
+        if (!priv.inventory[i]) {
+          const add = Math.min(rem, def.maxStack);
+          priv.inventory[i] = { itemId, count: add, durability: durability ?? def.maxDurability };
+          rem -= add;
+        }
+      }
+      p.equippedItemId = priv.inventory[p.equippedSlot]?.itemId ?? null;
+      this.relay('player:private', priv, peerId);
+    };
+
+    const consumePeerMats = (ings: { itemId: string; count: number }[]): boolean => {
+      for (const ing of ings) {
+        let have = 0;
+        for (const s of priv.inventory) if (s?.itemId === ing.itemId) have += s.count;
+        if (have < ing.count) return false;
+      }
+      for (const ing of ings) {
+        let need = ing.count;
+        for (let i = 0; i < priv.inventory.length && need > 0; i++) {
+          const s = priv.inventory[i];
+          if (s && s.itemId === ing.itemId) {
+            const take = Math.min(need, s.count);
+            s.count -= take;
+            need -= take;
+            if (s.count <= 0) priv.inventory[i] = null;
+          }
+        }
+      }
+      p.equippedItemId = priv.inventory[p.equippedSlot]?.itemId ?? null;
+      return true;
+    };
+
+    if (event === 'player:input') {
+      const inp = data as PlayerInputPayload;
+      if (!p.alive || p.downed) return;
+      p.pitch = clamp(inp.pitch, -1.5, 1.5);
+      if (p.boatId) {
+        if ((p.boatSeatIndex ?? 0) > 0) p.yaw = inp.yaw;
+        return;
+      }
+      p.x = clamp(inp.x, -212, 212);
+      p.y = inp.y;
+      p.z = clamp(inp.z, -212, 212);
+      p.vx = inp.vx;
+      p.vy = inp.vy;
+      p.vz = inp.vz;
+      p.yaw = inp.yaw;
+      p.anim = inp.anim;
+    } else if (event === 'player:equip') {
+      const slot = Number(data);
+      if (slot >= 0 && slot < HOTBAR_SIZE) {
+        p.equippedSlot = slot;
+        p.equippedItemId = priv.inventory[slot]?.itemId ?? null;
+      }
+    } else if (event === 'player:action') {
+      const act = data as PrimaryActionPayload;
+      p.swingTime = 0.34;
+      if (act.targetNodeId) {
+        const node = this.nodes.get(act.targetNodeId);
+        if (node && !node.depleted && Math.hypot(node.x - p.x, node.z - p.z) < 6.5) {
+          node.hp = Math.max(0, node.hp - 24);
+          if (node.hp <= 0) {
+            node.depleted = true;
+            node.respawnAt = Date.now() + 90_000;
+            const bp = RESOURCE_NODE_BLUEPRINTS[node.kind];
+            for (const d of bp.drops) {
+              addPeerItem(d.itemId, d.min + Math.floor(Math.random() * (d.max - d.min + 1)));
+            }
+          }
+          this.handlers.onNodeUpdate(node);
+          this.relay('node:update', node);
+          const fx = { kind: 'chop' as const, x: node.x, y: node.y + 1, z: node.z };
+          this.handlers.onFxEvent(fx);
+          this.relay('fx:event', fx);
+        }
+      } else if (act.targetWildlifeId) {
+        const w = this.wildlife.get(act.targetWildlifeId);
+        if (w && w.state !== 'dead' && Math.hypot(w.x - p.x, w.z - p.z) < 6.5) {
+          this.damageWildlife(w, 26, p.x, p.z);
+        }
+      }
+    } else if (event === 'player:craft') {
+      const r = getRecipe(String(data));
+      if (r && consumePeerMats(r.ingredients)) {
+        addPeerItem(r.outputItemId, r.outputCount);
+        this.relay('toast:notify', { text: `Crafted ${r.outputCount}× ${ITEMS[r.outputItemId]?.name}!`, tone: 'good' }, peerId);
+      }
+    } else if (event === 'player:build') {
+      const bp = data as BuildPlacePayload;
+      const def = STRUCTURES[bp.kind];
+      if (def && consumePeerMats(def.costs)) {
+        const snapped = computeSnappedPlacement(
+          bp.kind,
+          { x: bp.x, y: bp.y, z: bp.z },
+          bp.rotY,
+          Array.from(this.structures.values()),
+          (x, z) => this.world.getHeight(x, z)
+        );
+        const st: StructureState = {
+          id: `st_${this.seq++}_${Date.now().toString(36)}`,
+          kind: bp.kind,
+          ownerId: p.id,
+          ownerName: p.name,
+          x: snapped.x,
+          y: snapped.y,
+          z: snapped.z,
+          rotY: snapped.rotY,
+          hp: def.maxHp,
+          maxHp: def.maxHp,
+          lit: bp.kind === 'campfire' || bp.kind === 'lantern_post' || bp.kind === 'lighthouse_beacon' || bp.kind === 'tiki_brazier' || bp.kind === 'alchemy_cauldron',
+          fuel: bp.kind === 'campfire' ? 100 : undefined,
+          waterLevel: bp.kind === 'rain_collector' ? 50 : undefined,
+          cropProgress: bp.kind === 'planter_box' ? 20 : undefined,
+          chestSlots: bp.kind === 'storage_chest' ? Array.from({ length: CHEST_SIZE }, () => null) : undefined,
+        };
+        this.structures.set(st.id, st);
+        this.handlers.onStructureAdd(st);
+        this.relay('structure:add', st);
+        this.relay('player:private', priv, peerId);
+      }
+    } else if (event === 'boat:build') {
+      const bb = data as BoatBuildPayload;
+      const def = BOATS[bb.kind];
+      if (def && consumePeerMats(def.costs)) {
+        const boat: BoatState = {
+          id: `boat_${this.seq++}_${Date.now().toString(36)}`,
+          kind: bb.kind,
+          ownerId: p.id,
+          ownerName: p.name,
+          x: bb.x,
+          y: WATER_LEVEL,
+          z: bb.z,
+          yaw: bb.rotY,
+          vx: 0,
+          vz: 0,
+          speed: 0,
+          throttle: 0,
+          rudder: 0,
+          hp: def.maxHp,
+          maxHp: def.maxHp,
+          pilotId: null,
+          passengerIds: [],
+          chestSlots: def.cargoSlots > 0 ? Array.from({ length: def.cargoSlots }, () => null) : undefined,
+        };
+        this.boats.set(boat.id, boat);
+        this.handlers.onBoatAdd(boat);
+        this.relay('boat:add', boat);
+        this.relay('player:private', priv, peerId);
+      }
+    } else if (event === 'boat:board') {
+      this.boardBoatForPlayer(p, data as string | null, peerId);
+    } else if (event === 'boat:control') {
+      const bc = data as BoatControlPayload;
+      if (p.boatId) {
+        const b = this.boats.get(p.boatId);
+        if (b && b.pilotId === p.id) {
+          if (typeof bc.throttle === 'number') b.throttle = clamp(Math.round(bc.throttle), -1, 3);
+          this.boatSteers.set(b.id, clamp(bc.steer, -1, 1));
+        }
+      }
+    } else if (event === 'player:fishCatch') {
+      const deep = Boolean((data as { deepWater?: boolean })?.deepWater);
+      const itemId = deep && Math.random() < 0.35 ? 'golden_snapper' : 'raw_fish';
+      addPeerItem(itemId, 1);
+      this.relay('toast:notify', { text: `Reeled in ${ITEMS[itemId]?.name}!`, tone: 'good' }, peerId);
+    } else if (event === 'chat:send') {
+      const txt = String(data || '').trim().slice(0, 180);
+      if (!txt) return;
+      const msg: ChatMessage = {
+        id: `c_${this.seq++}`,
+        senderId: p.id,
+        senderName: p.name,
+        text: txt,
+        kind: 'chat',
+        timestamp: Date.now(),
+      };
+      this.handlers.onChatMessage(msg);
+      this.relay('chat:message', msg);
+    } else if (event === 'player:pingWorld') {
+      const pg = data as { x: number; y: number; z: number; label?: string };
+      this.emitWorldPing(p, pg.x, pg.y, pg.z, pg.label);
+    } else if (event === 'player:revive') {
+      this.revivePlayerBy(p, String(data));
+    } else if (event === 'player:teleportToFriend') {
+      this.teleportPlayerToFriend(p, String(data), peerId);
+    } else if (event === 'player:respawn') {
+      const sp = this.world.getSpawnPoint();
+      p.x = sp.x;
+      p.z = sp.z;
+      p.y = sp.y;
+      p.alive = true;
+      p.downed = false;
+      p.vitals.hp = p.vitals.maxHp;
+    } else if (event === 'player:swapSlots') {
+      const { from, to } = data as { from: number; to: number };
+      const tmp = priv.inventory[from];
+      priv.inventory[from] = priv.inventory[to];
+      priv.inventory[to] = tmp;
+      p.equippedItemId = priv.inventory[p.equippedSlot]?.itemId ?? null;
+      this.relay('player:private', priv, peerId);
+    } else if (event === 'player:consume') {
+      const idx = Number(data);
+      const s = priv.inventory[idx];
+      const def = getItem(s?.itemId);
+      if (s && def?.category === 'consumable') {
+        if (def.heal) p.vitals.hp = Math.min(p.vitals.maxHp, p.vitals.hp + def.heal);
+        if (def.hungerRestore) p.vitals.hunger = Math.min(100, p.vitals.hunger + def.hungerRestore);
+        if (def.thirstRestore) p.vitals.thirst = Math.min(100, p.vitals.thirst + def.thirstRestore);
+        s.count--;
+        if (s.count <= 0) priv.inventory[idx] = null;
+        this.relay('player:private', priv, peerId);
+      }
+    }
   }
 
   private ensureStarterBoat(): void {
@@ -271,10 +680,15 @@ export class LocalGameEngine {
   }
 
   stop(): void {
+    if (this.stopTicker) {
+      this.stopTicker();
+      this.stopTicker = null;
+    }
     if (this.timer !== null) {
       globalThis.clearInterval(this.timer);
       this.timer = null;
     }
+    this.saveLocal();
   }
 
   private seedStarterCamp(): void {
@@ -412,6 +826,28 @@ export class LocalGameEngine {
 
   private getWildlifeSnap(): WildlifeState[] {
     return Array.from(this.wildlife.values()).filter((w) => w.state !== 'dead');
+  }
+
+  handleTogglePvp(): void {
+    this.localPlayer.pvpEnabled = !this.localPlayer.pvpEnabled;
+    this.handlers.onToast({
+      text: this.localPlayer.pvpEnabled ? 'PvP Duels enabled!' : 'PvP Duels disabled (Co-op Mode).',
+      tone: this.localPlayer.pvpEnabled ? 'warn' : 'good',
+    });
+  }
+
+  handleEmote(emote: string): void {
+    const label = emote === 'wave' ? 'waves hello!' : emote === 'cheer' ? 'cheers!' : `signals (${emote})!`;
+    const msg: ChatMessage = {
+      id: `lem_${this.seq++}`,
+      senderId: this.localPlayer.id,
+      senderName: this.localPlayer.name,
+      text: `${this.localPlayer.name} ${label}`,
+      kind: 'system',
+      timestamp: Date.now(),
+    };
+    this.handlers.onChatMessage(msg);
+    this.relay('chat:message', msg);
   }
 
   spawnBot(): void {
@@ -632,7 +1068,9 @@ export class LocalGameEngine {
       const dz = node.z - this.localPlayer.z;
       const len = Math.hypot(dx, dz) || 1;
       if (node.kind.endsWith('tree')) {
-        this.handlers.onNodeFell({ id: node.id, dirX: dx / len, dirZ: dz / len });
+        const fell = { id: node.id, dirX: dx / len, dirZ: dz / len };
+        this.handlers.onNodeFell(fell);
+        this.relay('node:fell', fell);
       }
       for (const d of bp.drops) {
         if (d.chance !== undefined && Math.random() > d.chance) continue;
@@ -644,6 +1082,7 @@ export class LocalGameEngine {
       this.syncPrivate();
     }
     this.handlers.onNodeUpdate(node);
+    this.relay('node:update', node);
   }
 
   private damageWildlife(w: LocalWildlife, dmg: number, fromX: number, fromZ: number): void {
@@ -873,7 +1312,10 @@ export class LocalGameEngine {
     this.priv.objectives.build_shelter = true;
     this.grantXp(18);
     this.handlers.onStructureAdd(st);
-    this.handlers.onFxEvent({ kind: 'build', x: st.x, y: st.y + 0.8, z: st.z });
+    this.relay('structure:add', st);
+    const fx = { kind: 'build' as const, x: st.x, y: st.y + 0.8, z: st.z };
+    this.handlers.onFxEvent(fx);
+    this.relay('fx:event', fx);
     this.syncPrivate();
     this.saveLocal();
   }
@@ -915,36 +1357,135 @@ export class LocalGameEngine {
     this.boats.set(boat.id, boat);
     this.grantXp(payload.kind === 'longship' ? 95 : payload.kind === 'skiff' ? 55 : 28);
     this.handlers.onBoatAdd(boat);
-    this.handlers.onFxEvent({ kind: 'build', x: boat.x, y: WATER_LEVEL + 0.8, z: boat.z });
+    this.relay('boat:add', boat);
+    const fx = { kind: 'build' as const, x: boat.x, y: WATER_LEVEL + 0.8, z: boat.z };
+    this.handlers.onFxEvent(fx);
+    this.relay('fx:event', fx);
     this.handlers.onToast({ text: `Launched ${def.name}! Approach & press [E] to sail!`, tone: 'good' });
     this.syncPrivate();
     this.saveLocal();
   }
 
-  handleBoardBoat(boatId: string | null): void {
-    const p = this.localPlayer;
+  private boardBoatForPlayer(p: PlayerState, boatId: string | null, peerId?: string): void {
+    const notify = (text: string, tone: 'info' | 'good' | 'warn' = 'info') => {
+      if (peerId) this.relay('toast:notify', { text, tone }, peerId);
+      else this.handlers.onToast({ text, tone });
+    };
+
     if (p.boatId) {
       const cur = this.boats.get(p.boatId);
       if (cur) {
-        cur.pilotId = null;
-        cur.throttle = 0;
-        const sideX = Math.cos(cur.yaw) * 1.9;
-        const sideZ = -Math.sin(cur.yaw) * 1.9;
+        if (cur.pilotId === p.id) {
+          cur.pilotId = null;
+          cur.throttle = 0;
+          this.boatSteers.delete(cur.id);
+        }
+        if (cur.passengerIds) {
+          cur.passengerIds = cur.passengerIds.filter((id) => id !== p.id);
+        }
+        const sideX = Math.cos(cur.yaw) * 2.0;
+        const sideZ = -Math.sin(cur.yaw) * 2.0;
         p.x = clamp(cur.x + sideX, -212, 212);
         p.z = clamp(cur.z + sideZ, -212, 212);
         p.y = Math.max(WATER_LEVEL + 0.25, this.world.getHeight(p.x, p.z) + 0.15);
       }
       p.boatId = null;
-      this.boatSteer = 0;
-      this.handlers.onToast({ text: 'Stepped off the helm.', tone: 'info' });
+      p.boatSeatIndex = undefined;
+      if (!peerId) this.boatSteer = 0;
+      notify('Disembarked vessel.', 'info');
       return;
     }
     if (!boatId) return;
     const b = this.boats.get(boatId);
-    if (!b || Math.hypot(b.x - p.x, b.z - p.z) > 7.5) return;
-    b.pilotId = p.id;
-    p.boatId = b.id;
-    this.handlers.onToast({ text: `Sailing ${BOATS[b.kind].name}! [W/S] Sails • [A/D] Steer • [E] Disembark`, tone: 'good' });
+    if (!b || Math.hypot(b.x - p.x, b.z - p.z) > 8.5) return;
+    const def = BOATS[b.kind];
+    if (!b.passengerIds) b.passengerIds = [];
+
+    if (!b.pilotId) {
+      b.pilotId = p.id;
+      p.boatId = b.id;
+      p.boatSeatIndex = 0;
+      notify(`Sailing ${def.name}! [W/S] Sails • [A/D] Steer • [E] Disembark`, 'good');
+      return;
+    }
+    if (b.passengerIds.length < def.maxCrew - 1) {
+      b.passengerIds.push(p.id);
+      p.boatId = b.id;
+      p.boatSeatIndex = b.passengerIds.length;
+      notify(`Boarded ${def.name} as Crew (${1 + b.passengerIds.length}/${def.maxCrew})!`, 'good');
+      return;
+    }
+    notify(`${def.name} is full (${def.maxCrew}/${def.maxCrew})!`, 'warn');
+  }
+
+  handleBoardBoat(boatId: string | null): void {
+    this.boardBoatForPlayer(this.localPlayer, boatId);
+  }
+
+  private emitWorldPing(sender: PlayerState, x: number, y: number, z: number, label?: string): void {
+    const now = Date.now();
+    const ping: WorldPing = {
+      id: `ping_${this.seq++}`,
+      senderId: sender.id,
+      senderName: sender.name,
+      x: clamp(x, -216, 216),
+      y: clamp(y, -2, 60),
+      z: clamp(z, -216, 216),
+      label: (label || 'Waypoint').slice(0, 36),
+      color: sender.isHost ? '#fbbf24' : '#2dd4bf',
+      createdAt: now,
+      expiresAt: now + 14_000,
+    };
+    this.activePings.push(ping);
+    if (this.activePings.length > 12) this.activePings.shift();
+    this.handlers.onWorldPing?.(ping);
+    this.relay('world:ping', ping);
+  }
+
+  handleWorldPing(payload: { x: number; y: number; z: number; label?: string }): void {
+    this.emitWorldPing(this.localPlayer, payload.x, payload.y, payload.z, payload.label);
+  }
+
+  private revivePlayerBy(reviver: PlayerState, targetId: string): void {
+    const target = this.getAllPlayers().find((pl) => pl.id === targetId);
+    if (!target || !target.downed) return;
+    target.downed = false;
+    target.downedUntil = undefined;
+    target.alive = true;
+    target.anim = 'idle';
+    target.vitals.hp = Math.round(target.vitals.maxHp * 0.5);
+    const fx = { kind: 'levelup' as const, x: target.x, y: target.y + 1.2, z: target.z };
+    this.handlers.onFxEvent(fx);
+    this.relay('fx:event', fx);
+    const msg: ChatMessage = {
+      id: `sys_${this.seq++}`,
+      senderId: 'system',
+      senderName: 'Wildreach',
+      text: `${reviver.name} revived ${target.name}!`,
+      kind: 'system',
+      timestamp: Date.now(),
+    };
+    this.handlers.onChatMessage(msg);
+    this.relay('chat:message', msg);
+  }
+
+  handleRevive(targetId: string): void {
+    this.revivePlayerBy(this.localPlayer, targetId);
+  }
+
+  private teleportPlayerToFriend(mover: PlayerState, friendId: string, peerId?: string): void {
+    const friend = this.getAllPlayers().find((pl) => pl.id === friendId);
+    if (!friend || friend.id === mover.id || !friend.alive) return;
+    if (mover.boatId) this.boardBoatForPlayer(mover, null, peerId);
+    mover.x = clamp(friend.x + (Math.random() - 0.5) * 2.2, -210, 210);
+    mover.z = clamp(friend.z + (Math.random() - 0.5) * 2.2, -210, 210);
+    mover.y = Math.max(this.world.getHeight(mover.x, mover.z), WATER_LEVEL + 0.2);
+    if (peerId) this.relay('toast:notify', { text: `Rallied to ${friend.name}!`, tone: 'good' }, peerId);
+    else this.handlers.onToast({ text: `Rallied to ${friend.name}!`, tone: 'good' });
+  }
+
+  handleTeleportToFriend(friendId: string): void {
+    this.teleportPlayerToFriend(this.localPlayer, friendId);
   }
 
   handleBoatControl(payload: BoatControlPayload): void {
@@ -977,6 +1518,7 @@ export class LocalGameEngine {
       b.chestSlots[payload.fromIndex] = null;
     }
     this.handlers.onBoatUpdate(b);
+    this.relay('boat:update', b);
     this.syncPrivate();
     this.saveLocal();
   }
@@ -1018,6 +1560,7 @@ export class LocalGameEngine {
     }
     this.structures.delete(structureId);
     this.handlers.onStructureRemove(structureId);
+    this.relay('structure:remove', structureId);
     this.syncPrivate();
     this.saveLocal();
   }
@@ -1040,6 +1583,7 @@ export class LocalGameEngine {
       st.chestSlots[payload.fromIndex] = null;
     }
     this.handlers.onStructureUpdate(st);
+    this.relay('structure:update', st);
     this.syncPrivate();
     this.saveLocal();
   }
@@ -1079,14 +1623,16 @@ export class LocalGameEngine {
       this.handlers.onToast({ text: 'Skies clear over Wildreach.', tone: 'good' });
       return;
     }
-    this.handlers.onChatMessage({
+    const msg: ChatMessage = {
       id: `lchat_${this.seq++}`,
       senderId: this.localPlayer.id,
       senderName: this.localPlayer.name,
       text: t,
       kind: 'chat',
       timestamp: Date.now(),
-    });
+    };
+    this.handlers.onChatMessage(msg);
+    this.relay('chat:message', msg);
   }
 
   private addItem(itemId: string, count: number, durability?: number): void {
@@ -1227,19 +1773,26 @@ export class LocalGameEngine {
       };
     }
 
-    // Boats sailing simulation
+    // Boats sailing simulation (supports BOTH host & remote P2P pilots + multi-passenger crew!)
     for (const b of this.boats.values()) {
       const def = BOATS[b.kind];
-      const steer = b.pilotId === p.id ? this.boatSteer : 0;
+      const pilot =
+        b.pilotId === p.id
+          ? p
+          : b.pilotId
+          ? this.remotePeers.get(b.pilotId)?.player ?? null
+          : null;
+      const steer = b.pilotId === p.id ? this.boatSteer : b.pilotId ? this.boatSteers.get(b.id) ?? 0 : 0;
       b.rudder += (steer - b.rudder) * Math.min(1, dt * 6);
       let targetSpeed = 0;
-      if (b.pilotId === p.id) {
+      if (pilot && pilot.alive) {
         const windEff = computeWindSailEfficiency(b.yaw, this.time.windDirX, this.time.windDirZ);
         if (b.throttle === -1) targetSpeed = -def.reverseSpeed;
         else if (b.throttle === 1) targetSpeed = def.paddleSpeed;
         else if (b.throttle === 2) targetSpeed = def.halfSailSpeed * windEff;
         else if (b.throttle === 3) targetSpeed = def.fullSailSpeed * windEff;
       } else {
+        b.pilotId = null;
         b.throttle = 0;
       }
       b.speed += (targetSpeed - b.speed) * Math.min(1, dt * (b.pilotId ? 2.4 : 1.4));
@@ -1265,14 +1818,31 @@ export class LocalGameEngine {
         b.vz = 0;
       }
       b.y = WATER_LEVEL;
-      if (b.pilotId === p.id && p.alive) {
-        p.x = b.x - fwdX * def.helmOffsetZ;
-        p.z = b.z - fwdZ * def.helmOffsetZ;
-        p.y = WATER_LEVEL + def.deckY;
-        p.yaw = b.yaw;
-        p.vx = b.vx;
-        p.vz = b.vz;
-        p.status.wet = false;
+      if (pilot && pilot.alive) {
+        pilot.x = b.x - fwdX * def.helmOffsetZ;
+        pilot.z = b.z - fwdZ * def.helmOffsetZ;
+        pilot.y = WATER_LEVEL + def.deckY;
+        pilot.yaw = b.yaw;
+        pilot.vx = b.vx;
+        pilot.vz = b.vz;
+        pilot.status.wet = false;
+      }
+      if (b.passengerIds && b.passengerIds.length > 0) {
+        const rightX = Math.cos(b.yaw);
+        const rightZ = -Math.sin(b.yaw);
+        b.passengerIds = b.passengerIds.filter((pid, idx) => {
+          const pax = pid === p.id ? p : this.remotePeers.get(pid)?.player;
+          if (!pax || !pax.alive || pax.boatId !== b.id) return false;
+          const seat = def.passengerOffsets[idx] ?? [0, 0];
+          pax.x = b.x + rightX * seat[0] - fwdX * seat[1];
+          pax.z = b.z + rightZ * seat[0] - fwdZ * seat[1];
+          pax.y = WATER_LEVEL + def.deckY;
+          pax.vx = b.vx;
+          pax.vz = b.vz;
+          pax.boatSeatIndex = idx + 1;
+          pax.status.wet = false;
+          return true;
+        });
       }
     }
 
@@ -1389,15 +1959,19 @@ export class LocalGameEngine {
       }
     }
 
-    // Emit local snapshot
-    this.handlers.onSnapshot({
+    // Emit local snapshot + relay to all connected WebRTC/BroadcastChannel P2P friends!
+    const snap = {
       t: now,
       time: { ...this.time },
-      players: [this.localPlayer, ...this.bots],
+      players: this.getAllPlayers(),
       boats: Array.from(this.boats.values()),
       wildlife: this.getWildlifeSnap(),
       projectiles: Array.from(this.projectiles.values()),
-    });
+    };
+    this.handlers.onSnapshot(snap);
+    if (this.remotePeers.size > 0) {
+      this.relay('world:snapshot', snap);
+    }
 
     this.saveTimer += dt;
     if (this.saveTimer >= 20) {

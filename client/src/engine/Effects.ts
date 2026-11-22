@@ -3,6 +3,7 @@ import {
   getItem,
   type LootDropState,
   type ProjectileState,
+  type WorldPing,
   type WorldTimeState,
 } from '@wildreach/shared';
 import type { ProceduralTextureSet } from './Textures';
@@ -32,6 +33,7 @@ export class EffectsManager {
   private fallingTrees: FallingTree[] = [];
   private lootMeshes = new Map<string, { mesh: THREE.Group; baseY: number }>();
   private projMeshes = new Map<string, THREE.Group>();
+  private pingBeacons = new Map<string, { group: THREE.Group; ring: THREE.Mesh; diamond: THREE.Mesh; expiresAt: number }>();
   private rainLines: THREE.LineSegments;
   private rainMat: THREE.LineBasicMaterial;
   private fireflies: THREE.Points;
@@ -334,5 +336,60 @@ export class EffectsManager {
       (u.lWing as THREE.Mesh).rotation.z = flap;
       (u.rWing as THREE.Mesh).rotation.z = -flap;
     }
+
+    // 8. 3D Teammate World Ping Sky-Beams
+    const now = Date.now();
+    for (const [id, pb] of Array.from(this.pingBeacons.entries())) {
+      if (now >= pb.expiresAt) {
+        this.group.remove(pb.group);
+        this.pingBeacons.delete(id);
+        continue;
+      }
+      const pulse = 1 + Math.sin(elapsed * 5.2) * 0.32;
+      pb.ring.scale.set(pulse, pulse, 1);
+      pb.diamond.rotation.y = elapsed * 2.4;
+      pb.diamond.position.y = 4.2 + Math.sin(elapsed * 3.5) * 0.45;
+    }
+  }
+
+  addWorldPing(ping: WorldPing): void {
+    if (this.pingBeacons.has(ping.id)) return;
+    const g = new THREE.Group();
+    g.position.set(ping.x, ping.y, ping.z);
+
+    const beamMat = new THREE.MeshBasicMaterial({
+      color: ping.color,
+      transparent: true,
+      opacity: 0.24,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.55, 68, 10, 1, true), beamMat);
+    beam.position.y = 34;
+    g.add(beam);
+
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(1.1, 1.55, 24),
+      new THREE.MeshBasicMaterial({
+        color: ping.color,
+        transparent: true,
+        opacity: 0.85,
+        side: THREE.DoubleSide,
+      })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.25;
+    g.add(ring);
+
+    const diamond = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.65, 0),
+      new THREE.MeshBasicMaterial({ color: '#ffffff' })
+    );
+    diamond.position.y = 4.2;
+    g.add(diamond);
+
+    this.group.add(g);
+    this.pingBeacons.set(ping.id, { group: g, ring, diamond, expiresAt: ping.expiresAt });
   }
 }

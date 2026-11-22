@@ -115,12 +115,22 @@ export class BoatManager {
     this.boats.delete(id);
   }
 
-  getHelmWorldPos(id: string): THREE.Vector3 | null {
+  getHelmWorldPos(id: string, seatIndex = 0): THREE.Vector3 | null {
     const v = this.boats.get(id);
     if (!v) return null;
     const def = BOATS[v.state.kind];
     const cos = Math.cos(v.curYaw);
     const sin = Math.sin(v.curYaw);
+    if (seatIndex > 0) {
+      const seat = def.passengerOffsets[seatIndex - 1] ?? [0, 0];
+      const rightX = cos;
+      const rightZ = -sin;
+      return new THREE.Vector3(
+        v.curX + rightX * seat[0] + sin * seat[1],
+        v.curHeave + def.deckY,
+        v.curZ + rightZ * seat[0] + cos * seat[1]
+      );
+    }
     return new THREE.Vector3(
       v.curX + sin * def.helmOffsetZ,
       v.curHeave + def.deckY,

@@ -90,6 +90,24 @@ export interface PlayerState {
   emote: string | null;
   emoteUntil: number;
   boatId: string | null;
+  boatSeatIndex?: number; // 0 = helm pilot, 1..N = crew passenger seat
+  downed?: boolean;
+  downedUntil?: number;
+  isHost?: boolean;
+  pingMs?: number;
+}
+
+export interface WorldPing {
+  id: string;
+  senderId: string;
+  senderName: string;
+  x: number;
+  y: number;
+  z: number;
+  label: string;
+  color: string;
+  createdAt: number;
+  expiresAt: number;
 }
 
 export interface LocalPlayerPrivateState {
@@ -195,6 +213,7 @@ export interface BoatState {
   hp: number;
   maxHp: number;
   pilotId: string | null;
+  passengerIds?: string[];
   chestSlots?: (InventorySlot | null)[];
 }
 
