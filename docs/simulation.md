@@ -1,0 +1,43 @@
+# Simulation notes
+
+## Research and design direction
+
+See [research.md](research.md) for the source notes behind this independent prototype. The implementation is deliberately smaller and different from WorldBox; it is not a recreation of its proprietary rules or assets.
+
+## Current model
+
+- **World:** A generated 180 × 115 grid. Choose a populated archipelago or an empty ocean, and optionally set a numeric seed. The seed reproduces terrain, not creature names or simulation outcomes. Water and mountains are impassable to ground creatures; dragons can fly over them. A cached terrain layer is invalidated by terrain edits and burned tiles.
+- **Biomes:** Enchanted tiles can bless and heal creatures; corrupted tiles can curse and damage them; infernal tiles damage non-dragons. These are small original approximations, not all the effects of the source game.
+- **Life:** Humans, elves, dwarves, orcs, sheep, wolves, zombies, skeletons, and dragons move around. Creatures age; wolves hunt nearby sheep; sheep and non-warrior civilians flee nearby threats. Hostile monsters pursue nearby non-monsters, while healthy warriors defend their village and injured villagers retreat home when safe. Creatures also flee nearby fire. A zombie bite can infect a victim, who can turn into a zombie on death. Nearby plague spreads, harms and eventually resolves. Some citizens have Strong, Immune, or Long-lived traits. Trait powers can add Strong, Immune or Immortal, apply a curse, or reset traits. Blessing heals, clears both infections and the curse, and grants a blessing. Inspect a creature to see its traits and status or mark it as a favorite. Favorites are highlighted but are not protected from death.
+- **Settlements and resources:** Villagers have home settlements. Nearby fertile terrain produces food, forests generate wood, and nearby stone, iron and gold deposits are depleted as villages gather them. Residents consume food if hunger is enabled; food shortages damage residents. Population and building resources allow settlements to advance through six tiers (see below). Populous settlements can found up to four villages per kingdom on reachable land. Connected villages can share food, prioritizing the neediest and looking for a reachable nearby donor. New villages compare several reachable sites for fertile ground and forests while avoiding nearby fire and rivals. Empty villages are eventually abandoned.
+- **Kingdoms and conflict:** Neighboring, land-connected villages can trigger automatic wars when diplomacy is enabled. Wars produce periodic abstract raids based on population and warriors; raids damage residents and settlement defense, and a weakened settlement can change hands. Villages become less loyal when far from the capital, at war, or short of food; disloyal villages may rebel when the law is enabled. The Rebellion power forces a non-capital village to become independent. Wars can end naturally or via the Peace power. A kingdom falls when its last settlement is lost. The War power affects every pair of kingdoms, even isolated ones; raids still require land connectivity.
+- **Fire:** Fire persists across simulation ticks, harms creatures and villages, and can spread through flammable terrain when the fire-spread law is enabled. Burned tiles become scorched. Rain puts out nearby fires. Optional natural disasters can start fires near settlements; they are off by default. Other destruction powers remain simplified instant effects.
+- **World laws:** Reproduction, old age, hunger, expansion, natural diplomacy, rebellion, fire spread, hostile monsters and natural disasters are individually configurable. Disabling natural diplomacy does not end existing wars; use the Peace power to do that.
+- **Persistence:** One browser-local save slot stores the world and its laws. Settings also offers JSON export/import; older prototype saves are migrated on load and invalid files are rejected. Browser storage is not cloud storage and may be removed when browser data is cleared.
+
+## Creature decisions and navigation
+
+Creatures use a lightweight, priority-based decision system, not a learned or general-purpose AI. Fire and nearby threats take precedence over hunting or village defense; injured villagers return home when there is no immediate threat. Wolves seek sheep, monsters seek non-monsters when the hostile-monsters law is on, and healthy warriors defend their home against nearby monsters. Inspect a creature to see its current activity. Individuals continue to wander when no goal is active. Decisions are updated in staggered groups, with spatial buckets to limit nearby searches.
+
+Ground creatures pursuing a goal use a bounded four-direction A* search around water, mountains and active fire, with an added cost for infernal terrain. Routes are transient (not serialized), and are periodically recalculated, after terrain edits, or if the next waypoint catches fire. A route may fail when a goal is unreachable or the search budget is exhausted; the agent retries later. Dragons fly directly instead. Fleeing uses a small set of candidate directions, so it can still choose an unreachable destination in difficult terrain. Combat against other kingdoms is still an abstract settlement-level raid, not individual tactical armies.
+
+## Settlement progression
+
+Worldforge uses its own simplified six-tier settlement progression, inspired by the six house tiers and three town-hall tiers described in the [WorldBox buildings reference](https://the-official-worldbox-wiki.fandom.com/wiki/Category:Buildings). A settlement upgrades all homes together after meeting the population and resource requirements. Town halls change appearance at tiers 3 and 5. Costs are Worldforge's balancing choices, not WorldBox's exact costs.
+
+| Tier | Name | Residents needed | Housing capacity | Upgrade cost (wood / stone / iron / gold) | Notable unlocks |
+| --- | --- | ---: | ---: | --- | --- |
+| 1 | Camp | — | 20 | — | Homes, bonfire, town hall I |
+| 2 | Hamlet | 12 | 28 | 8 / 3 / 0 / 0 | Farms, stockpile |
+| 3 | Village | 22 | 38 | 12 / 8 / 2 / 0 | Windmill, mine, town hall II |
+| 4 | Town | 32 | 48 | 18 / 14 / 4 / 3 | Watchtower, barracks |
+| 5 | City | 42 | 58 | 24 / 20 / 6 / 6 | Market, town hall III |
+| 6 | Grand city | 52 | 70 | 30 / 25 / 10 / 10 | Temple, grand homes |
+
+Farms and windmills improve food production. From tier 3, mines passively provide small amounts of stone, iron and gold. Watchtowers reduce raid damage and hurt nearby monsters, barracks recruit warriors, markets allow larger food transfers, and temples improve healing. The visuals are simplified: civic buildings are unlocked together with a settlement tier, are not individually placed or destructible, and may not be drawn if their visual position is on impassable terrain. The bonuses apply to the whole settlement.
+
+For immediate play, choose a kingdom in the overview and select **Divine advance**, or use **Kingdoms → Inspire** on a settlement. This grants any missing settlers and supplies, then advances one tier, even when the simulation is paused. It respects the world’s creature cap. **Focus village** zooms in to see the new buildings. Natural advancement still works if you prefer to watch it grow without intervention.
+
+## Known limitations
+
+There are no ships, alliances, cultures, technology trees, individual army pathfinding, or multiplayer. War raids are resolved at the settlement level, not by individual armies. Buildings are not independent entities and all homes in a village share one tier. Terrain and economy are lightweight; flags and borders are visual influence indicators rather than a tile ownership system. The simulation caps units at 650 and active fires and resource nodes at 300 each. These are opportunities for future work, not implemented WorldBox features.
