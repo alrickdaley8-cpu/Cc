@@ -25,6 +25,17 @@ try {
   await page.getByRole('button',{name:/Eldoria.*Human kingdom/}).click();
   await page.getByRole('button',{name:'Focus village'}).click();
   assert.match(await page.locator('.map-controls').innerText(),/300%/);
+  assert.match(await page.locator('.village-detail').innerText(),/BUILDINGS.*INTACT/);
+  assert.match(await page.locator('.village-detail').innerText(),/Knowledge/);
+  // Demolish the focused town hall and restore it with Blessing while paused.
+  await page.getByTitle('Kingdoms',{exact:true}).click();await page.getByTitle('Demolish',{exact:true}).click();
+  await page.mouse.click(640,400);await page.getByTitle('Save world').click();
+  const damaged=await page.evaluate(()=>JSON.parse(localStorage.getItem('worldforge-save')));
+  assert.equal(damaged.cities.find(c=>c.name==='Eldoria').buildings.find(b=>b.type==='hall').hp,0);
+  await page.getByTitle('Nature',{exact:true}).click();await page.getByTitle('Blessing',{exact:true}).click();await page.mouse.click(640,400);
+  await page.getByTitle('Save world').click();const repaired=await page.evaluate(()=>JSON.parse(localStorage.getItem('worldforge-save')));
+  assert.equal(repaired.cities.find(c=>c.name==='Eldoria').buildings.find(b=>b.type==='hall').hp,100);
+  await page.getByTitle('Terrain',{exact:true}).click();
   await page.waitForTimeout(200);const villageBefore=await page.locator('canvas').evaluate(c=>c.toDataURL());
   const advance=page.getByRole('button',{name:'✦ Divine advance'});
   for(let i=0;i<5&&await advance.isEnabled();i++)await advance.click();

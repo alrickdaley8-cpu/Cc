@@ -27,11 +27,12 @@ Commit generated root and `docs/` changes with the source; pushing the Pages bra
 
 1. Select a kingdom in **World overview** and choose **Focus village** to zoom in.
 2. Leave time running to let it grow, or press **Divine advance** in the village panel to grant the missing settlers and supplies and immediately see the next stage. You can also select **Kingdoms → Inspire** and click a settlement on the map.
-3. Repeat through six settlement/house tiers and three town-hall appearances. As tiers rise, farms, a mine, a windmill, a watchtower, barracks, a market and a temple unlock. These are simplified settlement-level features, not independently simulated buildings.
+3. Repeat through six settlement/house tiers and three town-hall appearances. As tiers rise, farms, a mine, a windmill, a watchtower, barracks, a market and a temple unlock. Buildings have individual locations and health; their effects are simplified and homes share the settlement tier.
 
 - Choose a category on the left and a power on the bottom bar. Click or drag on the map to use it; adjust the brush with the slider or `[` and `]`.
 - Zoom with the mouse wheel or the map buttons. Hold **Shift** and drag, right-drag, or select the **hand** tool to pan. The hand tool also works on touchscreens.
 - Pause with **Space** or the top-bar control. Change simulation speed with the `1x` button.
+- Use **Kingdoms → Demolish** on a building to ruin it. Villagers can rebuild with resources, or **Nature → Blessing** can restore it instantly.
 - Use **Inspect** on a creature or a settlement to see its details, including a village’s population, resources and next-tier requirements; creatures show their current activity and can be marked as favorites. The Traits category lets you change traits and statuses in an area. Open the overview for kingdom statistics and the world chronicle.
 - Open settings to control reproduction, old age, hunger, expansion, diplomacy, rebellion, fire spread, hostile monsters, and natural disasters. Existing wars can be ended with the Peace power even when natural diplomacy is off.
 - Save and load one world in your browser's local storage, or use Settings to export/import a JSON world file. Creating a new world replaces the current unsaved world, not the saved slot. Choose an archipelago or empty ocean and optionally enter a terrain seed.

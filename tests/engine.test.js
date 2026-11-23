@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {newWorld,restoreWorld,inspireVillage,CIV_STAGES,act,step,findPath,W,H} from '../src/engine.js';
+import {newWorld,restoreWorld,inspireVillage,CIV_STAGES,act,step,findPath,villageHousing,W,H} from '../src/engine.js';
 
 const advance=(w,n)=>{for(let i=0;i<n;i++)step(w)};
 test('world generation creates a populated, reproducible map',()=>{
@@ -207,4 +207,31 @@ test('supply chooses a reachable donor when the first donor is isolated',()=>{
   capital.x=10;capital.y=10;capital.food=150;w.rules.reproduction=false;
   const donor={...capital,id:'donor',x:80,y:55,food:150};const receiver={...capital,id:'receiver',x:85,y:55,food:0};w.cities.push(donor,receiver);
   w.tick=159;step(w);assert.ok(receiver.food>0);assert.ok(donor.food<150);assert.equal(capital.food,150);
+});
+test('buildings persist, affect housing, and can be demolished and blessed',()=>{
+  const w=newWorld(31,{empty:true});w.tiles.fill('grass');act(w,'human',70,55);const c=w.cities[0];const pop=w.units.length;
+  const house=c.buildings.find(b=>b.type==='house');assert.ok(house);const capacity=villageHousing(c,pop);
+  const result=act(w,'demolish',house.x,house.y,1);assert.equal(result.ok,true);assert.equal(house.hp,0);assert.ok(villageHousing(c,pop)<capacity);
+  const loaded=restoreWorld(JSON.parse(JSON.stringify(w))),ruin=loaded.cities[0].buildings.find(b=>b.key===house.key);assert.equal(ruin.hp,0);assert.equal(loaded.version,4);
+  act(loaded,'heal',ruin.x,ruin.y,2);assert.equal(ruin.hp,100);assert.equal(villageHousing(loaded.cities[0],pop),capacity);
+  const bad=JSON.parse(JSON.stringify(w));bad.cities[0].buildings[0].type='invalid';assert.throws(()=>restoreWorld(bad),/buildings/);
+});
+test('fire damages buildings and villagers rebuild ruins using resources',()=>{
+  const w=newWorld(32,{empty:true});w.tiles.fill('grass');act(w,'human',70,55);w.rules.fireSpread=false;w.rules.reproduction=false;w.rules.expansion=false;
+  const c=w.cities[0],house=c.buildings.find(b=>b.type==='house');w.fires=[{x:house.x,y:house.y,life:5}];w.tick=9;step(w);assert.equal(house.hp,75);
+  house.hp=0;w.fires=[];c.wood=0;c.stone=0;w.tick=39;step(w);assert.equal(house.hp,0);
+  c.wood=10;c.stone=5;w.tick=39;step(w);assert.equal(house.hp,100);assert.ok(c.stone<5);
+});
+test('destroyed watchtowers stop defending until restored',()=>{
+  const w=newWorld(33,{empty:true});w.tiles.fill('grass');act(w,'human',70,55);const c=w.cities[0];for(let i=0;i<3;i++)inspireVillage(w,c.id);
+  const tower=c.buildings.find(b=>b.type==='tower');assert.ok(tower);tower.hp=0;act(w,'dragon',74,55);const dragon=w.units.find(u=>u.race==='dragon');dragon.x=74;dragon.y=55;
+  w.tick=19;step(w);assert.equal(dragon.health,dragon.maxHealth);act(w,'heal',tower.x,tower.y,2);w.tick=19;step(w);assert.equal(dragon.health,dragon.maxHealth-12);
+});
+test('old saves migrate into buildings and kingdom knowledge with succession',()=>{
+  const w=newWorld(34,{empty:true});w.tiles.fill('grass');act(w,'human',70,55);w.rules.reproduction=false;w.rules.expansion=false;w.rules.oldAge=false;
+  const raw=JSON.parse(JSON.stringify(w));raw.version=3;for(const c of raw.cities)delete c.buildings;for(const k of raw.kingdoms){delete k.techLevel;delete k.research;delete k.rulerId}
+  const restored=restoreWorld(raw),k=restored.kingdoms[0];assert.ok(restored.cities[0].buildings.length>=5);assert.equal(k.techLevel,0);
+  for(const u of restored.units)u.age=20;k.research=34.9;restored.tick=159;step(restored);assert.equal(k.techLevel,1);assert.ok(k.rulerId);
+  const old=k.rulerId;restored.units.find(u=>u.id===old).health=0;restored.tick=159;step(restored);assert.ok(k.rulerId);assert.notEqual(k.rulerId,old);
+  const again=restoreWorld(JSON.parse(JSON.stringify(restored)));assert.equal(again.kingdoms[0].techLevel,1);assert.equal(again.kingdoms[0].rulerId,k.rulerId);
 });

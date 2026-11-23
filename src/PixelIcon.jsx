@@ -32,6 +32,7 @@ export default function PixelIcon({type}) {
   case 'inspect':art=<><path fill="#e5d59d" d="M8 5h12v3h3v11h-3v3H8v-3H5V8h3zm2 3v3H8v6h2v2h8v-2h2v-6h-2V8z"/><path fill="#c1a36d" d="M20 20h3v3h3v3h3v3h-5v-3h-3v-3h-3z"/></>;break;
   case 'war':art=<><path fill="#d8dfcf" d="m4 4 5 2 11 12-3 3L6 9zm24 0-5 2-11 12 3 3L26 9z"/><path fill="#ae7c4c" d="m5 20 7 7 2-2-2-2 3-3-2-2-3 3-3-3zm22 0-7 7-2-2 2-2-3-3 2-2 3 3 3-3z"/></>;break;
   case 'inspire':art=<><path fill="#d7bf76" d="M5 24h22v4H5zm3-3h16v3H8zm3-9h10v9H11zm2-5h6v5h-6z"/><path fill="#fff0b8" d="M15 3h2v5h-2zm-5 5h2v2h-2zm10 0h2v2h-2zm-4 7h2v4h-2z"/></>;break;
+  case 'demolish':art=<><path fill="#dec28d" d="M5 24h22v4H5zm2-7h18v7H7zm3-7h12v7H10z"/><path fill="#7b493d" d="m5 9 7-4 2 3-7 4zm8 2 7-4 6 7-3 3-4-4-5 3z"/><path fill="#d99b64" d="M14 17h3v6h-3z"/></>;break;
   case 'rebellion':art=<><path fill="#d5c291" d="M8 4h3v24H8z"/><path fill="#dd815f" d="M11 5h15l-4 6 4 6H11z"/><path fill="#f3e2bc" d="M16 8h3v6h-3zm-2 2h7v2h-7z"/></>;break;
   case 'peace':art=<><path fill="#e9ead9" d="M5 13h8V7h5v4h5v3h5v4h-4v4h-4v3h-9v-3H8v-3H5z"/><path fill="#9fc189" d="M4 24h9v2H4zm4-4h3v4H8z"/><path fill="#39493e" d="M21 13h2v2h-2z"/></>;break;
   case 'erase':art=<><path fill="#be8864" d="m4 20 12-13h6l7 7-12 13H9z"/><path fill="#edd8be" d="m9 23 9-10 6 6-9 8H9z"/></>;break;

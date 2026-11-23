@@ -24,6 +24,61 @@ export const CIV_STAGES = [
   {tier:6,name:'Grand city',population:52,housing:70,hall:3,cost:{wood:30,stone:25,iron:10,gold:10},buildings:['Temple','Grand homes']},
 ];
 
+// Building instances are stored on the village; costs and tiers are original Worldforge rules.
+const BUILDING_LAYOUT = [
+  {key:'hall',type:'hall',level:1,dx:0,dy:0},
+  {key:'bonfire',type:'bonfire',level:1,dx:-3,dy:2},
+  {key:'house0',type:'house',level:1,dx:-4,dy:-1}, {key:'house1',type:'house',level:1,dx:4,dy:-1},
+  {key:'house2',type:'house',level:1,dx:-4,dy:3}, {key:'house3',type:'house',level:1,dx:4,dy:3},
+  {key:'house4',type:'house',level:1,dx:-1,dy:5}, {key:'house5',type:'house',level:1,dx:2,dy:5},
+  {key:'house6',type:'house',level:1,dx:-6,dy:1}, {key:'house7',type:'house',level:1,dx:6,dy:1},
+  {key:'house8',type:'house',level:1,dx:-4,dy:-4}, {key:'house9',type:'house',level:1,dx:4,dy:-4},
+  {key:'farm',type:'farm',level:2,dx:-9,dy:5}, {key:'stockpile',type:'stockpile',level:2,dx:9,dy:5},
+  {key:'windmill',type:'windmill',level:3,dx:-9,dy:2}, {key:'mine',type:'mine',level:3,dx:9,dy:2},
+  {key:'tower',type:'tower',level:4,dx:-8,dy:-3}, {key:'barracks',type:'barracks',level:4,dx:8,dy:-3},
+  {key:'market',type:'market',level:5,dx:-7,dy:6}, {key:'temple',type:'temple',level:6,dx:8,dy:6},
+];
+const BUILDING_KEYS = new Set(BUILDING_LAYOUT.map(b=>b.key));
+function buildingPosition(w,c,def){
+  if(def.key==='hall')return {x:Math.floor(c.x),y:Math.floor(c.y)};
+  // Search close to the preferred site, avoiding overlap and impassable terrain.
+  for(let radius=0;radius<=4;radius++)for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){
+    if(Math.max(Math.abs(dx),Math.abs(dy))!==radius)continue;
+    const x=Math.floor(c.x)+def.dx+dx,y=Math.floor(c.y)+def.dy+dy;
+    if(!isLand(tileAt(w,x,y))||Math.hypot(x-c.x,y-c.y)>14||c.buildings.some(b=>Math.hypot(b.x-x,b.y-y)<2.4))continue;
+    return {x,y};
+  }
+  return null;
+}
+function ensureBuildings(w,c,population){
+  c.buildings??=[];
+  const houseCount=Math.min(10,Math.max(3,Math.ceil(population/7)));
+  for(const def of BUILDING_LAYOUT){
+    if(def.level>c.level||(def.type==='house'&&Number(def.key.slice(5))>=houseCount)||c.buildings.some(b=>b.key===def.key))continue;
+    const pos=buildingPosition(w,c,def);if(pos)c.buildings.push({key:def.key,type:def.type,...pos,hp:100});
+  }
+}
+function buildingActive(c,type){return c.buildings?.some(b=>b.type===type&&b.hp>0)??false;}
+export function villageHousing(c,population){
+  const intended=Math.min(10,Math.max(3,Math.ceil(population/7)));
+  const active=(c.buildings||[]).filter(b=>b.type==='house'&&b.hp>0).length;
+  return Math.floor(CIV_STAGES[c.level-1].housing*Math.min(1,active/intended));
+}
+function maintainBuildings(w,c){
+  for(const b of c.buildings)if(!isLand(tileAt(w,b.x,b.y)))b.hp=0;
+  for(const b of c.buildings){
+    if(b.hp<=0&&isLand(tileAt(w,b.x,b.y))&&c.wood>=5&&c.stone>=2){c.wood-=5;c.stone-=2;b.hp=100;event(w,`${c.name} rebuilds`,`The ${b.type} was rebuilt.`);break;}
+    if(b.hp>0&&b.hp<100&&c.wood>=1){c.wood-=1;b.hp=Math.min(100,b.hp+12);break;}
+  }
+}
+export function demolishBuilding(w,x,y,radius=4){
+  let selected=null,city=null,best=radius;
+  for(const c of w.cities)for(const b of c.buildings||[]){const d=Math.hypot(b.x-x,b.y-y);if(b.hp>0&&d<best){best=d;selected=b;city=c;}}
+  if(!selected)return {ok:false,message:'Click closer to an intact building.'};
+  selected.hp=0;event(w,`${city.name} lost a building`,`Its ${selected.type} was demolished.`);
+  return {ok:true,message:`${city.name}: ${selected.type} demolished. Villagers can rebuild it.`};
+}
+
 const names = ['Eldoria', 'Valewood', 'Khaz Modan', 'The Red March'];
 const colors = ['#e6c66f', '#8ccf83', '#d5a1df', '#e78975', '#91bfdf', '#e6a5b0'];
 const settlementSuffixes = ['Reach', 'Haven', 'Crossing', 'Grove', 'Watch', 'Ford'];
@@ -55,7 +110,9 @@ function foundCity(w, x, y, race, initial = false, index) {
   w.kingdoms.push(k);
   const c = {id:id(), x, y, kid:k.id, name:k.name, level:1, food:60, loyalty:100, wood:20, stone:15, iron:0, gold:0, hp:100, founded:Math.floor(w.year), lastExpansion:Math.floor(w.year)};
   w.cities.push(c);
+  ensureBuildings(w,c,initial ? 14 : 8);
   for (let j = 0; j < (initial ? 14 : 8); j++) spawn(w, x, y, race, k.id, c.id);
+  initializeKingdom(k);k.rulerId=w.units.find(u=>u.kid===k.id&&u.age>=16)?.id??null;
   if (!initial) event(w, `${k.name} was founded`, `A new ${race} settlement rises.`);
   return c;
 }
@@ -70,7 +127,7 @@ export function newWorld(seed = Math.random() * 10000, options = {}) {
     if(type==='mountain' && noise(x/11,y/11,seed+42)>.65) type='snow';
     tiles.push(options.empty?'deep':type); decor.push(hash(x,y,seed+18));
   }
-  const w = {version:3, seed, tiles, decor, units:[], cities:[], kingdoms:[], wars:[], resources:[], fires:[], rules:{...DEFAULT_RULES}, year:1, events:[], effects:[], tick:0};
+  const w = {version:4, seed, tiles, decor, units:[], cities:[], kingdoms:[], wars:[], resources:[], fires:[], rules:{...DEFAULT_RULES}, year:1, events:[], effects:[], tick:0};
   if(options.empty){event(w,'An empty world awaits','Shape the ocean into a world of your own.');return w;}
   [[.30,.37],[.67,.32],[.51,.72],[.80,.72]].forEach((p,i)=>{
     const pt=findLand(w,Math.floor(W*p[0]),Math.floor(H*p[1]));
@@ -89,18 +146,49 @@ export function restoreWorld(data) {
   const validTile=new Set(['deep','water','sand','grass','forest','hill','mountain','snow','desert','scorched','enchanted','corrupted','infernal']);
   const coords=o=>o&&Number.isFinite(o.x)&&Number.isFinite(o.y)&&o.x>=0&&o.x<W&&o.y>=0&&o.y<H;
   const validId=v=>typeof v==='string'||typeof v==='number';
-  if (!data || (data.version!=null&&(!Number.isInteger(data.version)||data.version>3)) || !Array.isArray(data.tiles) || data.tiles.length !== W*H || data.tiles.some(t=>!validTile.has(t)) || !Array.isArray(data.decor) || data.decor.length !== W*H || data.decor.some(v=>!Number.isFinite(v)||v<0||v>=1) || !Array.isArray(data.units) || data.units.length>650 || !Array.isArray(data.cities) || data.cities.length>100 || !Array.isArray(data.kingdoms) || data.kingdoms.length>100) throw new Error('Invalid world save');
+  if (!data || (data.version!=null&&(!Number.isInteger(data.version)||data.version>4)) || !Array.isArray(data.tiles) || data.tiles.length !== W*H || data.tiles.some(t=>!validTile.has(t)) || !Array.isArray(data.decor) || data.decor.length !== W*H || data.decor.some(v=>!Number.isFinite(v)||v<0||v>=1) || !Array.isArray(data.units) || data.units.length>650 || !Array.isArray(data.cities) || data.cities.length>100 || !Array.isArray(data.kingdoms) || data.kingdoms.length>100) throw new Error('Invalid world save');
   if(data.units.some(u=>!coords(u)||!Object.hasOwn(races,u.race)||!Number.isFinite(u.age)||!Number.isFinite(u.dir)) || data.cities.some(c=>!coords(c)||!validId(c.id)||!validId(c.kid)||typeof c.name!=='string'||!Number.isInteger(c.level)||c.level<1||c.level>6) || data.kingdoms.some(k=>!k||!validId(k.id)||typeof k.name!=='string'||!CIVILIZED.includes(k.race)||typeof k.color!=='string'||!/^#[0-9a-f]{6}$/i.test(k.color)))throw new Error('Invalid world entities');
   if(data.resources!=null&&(!Array.isArray(data.resources)||data.resources.length>300||data.resources.some(r=>!coords(r)||!Number.isInteger(r.x)||!Number.isInteger(r.y)||!['stone','iron','gold'].includes(r.type)||!Number.isFinite(r.amount)||r.amount<=0)))throw new Error('Invalid resources');
   if(data.fires!=null&&(!Array.isArray(data.fires)||data.fires.length>300||data.fires.some(f=>!coords(f)||!Number.isInteger(f.x)||!Number.isInteger(f.y)||!Number.isFinite(f.life)||f.life<=0||f.life>5)))throw new Error('Invalid fires');
-  data.version=3; data.resources=Array.isArray(data.resources)?data.resources:[]; data.fires=Array.isArray(data.fires)?data.fires:[];
+  data.version=4; data.resources=Array.isArray(data.resources)?data.resources:[]; data.fires=Array.isArray(data.fires)?data.fires:[];
   data.rules=Object.fromEntries(Object.entries(DEFAULT_RULES).map(([key,value])=>[key,typeof data.rules?.[key]==='boolean'?data.rules[key]:value]));
   data.wars=Array.isArray(data.wars)?data.wars.filter(war=>war&&validId(war.a)&&validId(war.b)&&Number.isFinite(war.since)).slice(0,5000):[];
   data.events=Array.isArray(data.events)?data.events.filter(e=>e&&typeof e.title==='string'&&typeof e.detail==='string'&&Number.isFinite(e.year)).slice(0,60):[]; data.effects=[]; data.tick=Number.isFinite(data.tick)?data.tick:0; data.year=Number.isFinite(data.year)?data.year:1;
   for (const c of data.cities) { c.food=Number.isFinite(c.food)?c.food:60; c.loyalty=Number.isFinite(c.loyalty)?clamp(c.loyalty,0,100):100; c.hp=Number.isFinite(c.hp)?c.hp:100; for(const key of ['wood','stone','iron','gold'])c[key]=Number.isFinite(c[key])?c[key]:(key==='wood'?20:key==='stone'?15:0); c.founded??=1; c.lastExpansion??=data.year; }
   for (const u of data.units) { u.id??=id(); u.name??=randomName(); u.health=Number.isFinite(u.health)?u.health:100; u.maxHealth=Number.isFinite(u.maxHealth)&&u.maxHealth>0?u.maxHealth:100; u.traits=Array.isArray(u.traits)?u.traits.filter(t=>typeof t==='string').slice(0,20):[]; u.zombieInfection??=false; u.blessed??=false; u.cursed??=false; u.favorite??=false; u.infectionAge??=0; u.warrior??=false; u.kills??=0; u.activity='Wandering'; if(!u.home && u.kid) u.home=data.cities.find(c=>c.kid===u.kid)?.id ?? null; }
+  for(const k of data.kingdoms)initializeKingdom(k);
+  for(const c of data.cities){
+    if(c.buildings==null){c.buildings=[];ensureBuildings(data,c,data.units.filter(u=>u.home===c.id).length);}
+    else if(!Array.isArray(c.buildings)||c.buildings.length>BUILDING_LAYOUT.length||c.buildings.some(b=>!b||!BUILDING_KEYS.has(b.key)||BUILDING_LAYOUT.find(d=>d.key===b.key).type!==b.type||!coords(b)||!Number.isInteger(b.x)||!Number.isInteger(b.y)||!Number.isFinite(b.hp)||b.hp<0||b.hp>100)||new Set(c.buildings.map(b=>b.key)).size!==c.buildings.length)throw new Error('Invalid buildings');
+  }
   syncWarFlags(data); return data;
 }
+const researchTarget = level => 35 + level * 45;
+function initializeKingdom(k){
+  k.techLevel=Number.isInteger(k.techLevel)?clamp(k.techLevel,0,5):0;
+  k.research=Number.isFinite(k.research)?clamp(k.research,0,1000):0;
+  if(typeof k.rulerId!=='string'&&typeof k.rulerId!=='number')k.rulerId=null;
+}
+function advanceKingdoms(w){
+  for(const k of w.kingdoms){
+    initializeKingdom(k);
+    const people=w.units.filter(u=>u.kid===k.id&&u.health>0&&CIVILIZED.includes(u.race));
+    const ruler=people.find(u=>u.id===k.rulerId);
+    if(!ruler){
+      const candidates=people.filter(u=>u.age>=16).sort((a,b)=>(Number(b.warrior)-Number(a.warrior))||b.age-a.age);
+      k.rulerId=candidates[0]?.id??null;
+      if(candidates[0])event(w,`${candidates[0].name} leads ${k.name}`,`A new ruler takes charge.`);
+    }
+    if(k.techLevel<5&&people.length){
+      k.research+=.5+people.length*.055;
+      if(k.research>=researchTarget(k.techLevel)){
+        k.research-=researchTarget(k.techLevel);k.techLevel++;
+        event(w,`${k.name} advances its knowledge`,`Knowledge level ${k.techLevel} improves food production and raid strength.`);
+      }
+    }
+  }
+}
+
 function syncWarFlags(w) { for(const k of w.kingdoms) k.atWar=w.wars.some(war=>war.a===k.id||war.b===k.id); }
 function enemies(w,a,b) { return !!a && !!b && a!==b && w.wars.some(war=>(war.a===a&&war.b===b)||(war.a===b&&war.b===a)); }
 function startWar(w,a,b,announce=true) {
@@ -144,7 +232,7 @@ function expand(w,c,residents) {
   if(best){const {x,y}=best;
     const n=w.cities.filter(city=>city.kid===k.id).length;
     const city={id:id(),x,y,kid:k.id,name:`${k.name.startsWith('The ')?k.name:k.name.split(' ')[0]} ${settlementSuffixes[(n-1)%settlementSuffixes.length]}`,level:1,food:45,loyalty:75,wood:15,stone:10,iron:0,gold:0,hp:100,founded:Math.floor(w.year),lastExpansion:w.year};
-    w.cities.push(city); c.lastExpansion=w.year;
+    w.cities.push(city); ensureBuildings(w,city,6); c.lastExpansion=w.year;
     for(const u of residents.slice(0,6)) {u.home=city.id;u.x=x+(Math.random()-.5)*2;u.y=y+(Math.random()-.5)*2;}
     event(w,`${city.name} was founded`,`${k.name} sends settlers to new lands.`);return;
   }
@@ -154,7 +242,7 @@ function rebel(w,c) {
   const parent=w.kingdoms.find(k=>k.id===c.kid),siblings=w.cities.filter(city=>city.kid===c.kid);
   if(!parent||siblings.length<2||siblings[0].id===c.id)return false;
   const n=w.kingdoms.length, k={id:id(),name:`${c.name} Freehold`,race:parent.race,color:colors[n%colors.length],atWar:false,founded:Math.floor(w.year)};
-  w.kingdoms.push(k);c.kid=k.id;c.loyalty=100;c.lastExpansion=w.year;
+  initializeKingdom(k);w.kingdoms.push(k);c.kid=k.id;c.loyalty=100;c.lastExpansion=w.year;
   for(const u of w.units)if(u.home===c.id)u.kid=k.id;
   startWar(w,parent,k,false);event(w,`${c.name} declares independence`,`${k.name} rebels against ${parent.name}.`);return true;
 }
@@ -164,7 +252,7 @@ function supplyVillages(w){
     for(const receiver of receivers){
       const givers=cities.filter(c=>c!==receiver&&c.food>100&&Math.hypot(c.x-receiver.x,c.y-receiver.y)<=40).sort((a,b)=>Math.hypot(a.x-receiver.x,a.y-receiver.y)-Math.hypot(b.x-receiver.x,b.y-receiver.y));
       const giver=givers.find(c=>reachable(w,c.x,c.y,receiver.x,receiver.y,55));if(!giver)continue;
-      const amount=Math.min(giver.level>=5?25:15,giver.food-100,30-receiver.food);giver.food-=amount;receiver.food+=amount;
+      const amount=Math.min(buildingActive(giver,'market')?25:15,giver.food-100,30-receiver.food);giver.food-=amount;receiver.food+=amount;
       if(w.year-(receiver.lastAid??0)>15){receiver.lastAid=w.year;event(w,`${receiver.name} receives supplies`,`Food arrives from ${giver.name}.`);}
     }
   }
@@ -173,7 +261,7 @@ function upgradeVillage(w,c,population) {
   const next=CIV_STAGES[c.level];
   if(!next||population<next.population||!Object.entries(next.cost).every(([key,amount])=>c[key]>=amount))return false;
   for(const [key,amount] of Object.entries(next.cost))c[key]-=amount;
-  c.level=next.tier;event(w,`${c.name} became a ${next.name.toLowerCase()}`,`Tier ${next.tier} unlocked: ${next.buildings.join(', ')}.`);return true;
+  c.level=next.tier;ensureBuildings(w,c,population);event(w,`${c.name} became a ${next.name.toLowerCase()}`,`Tier ${next.tier} unlocked: ${next.buildings.join(', ')}.`);return true;
 }
 // A god-sandbox shortcut: supplies and settlers are granted explicitly by the player.
 export function inspireVillage(w,cityId) {
@@ -206,7 +294,7 @@ function updateFires(w) {
   for(const f of [...w.fires]) {
     if(!flammable(tileAt(w,f.x,f.y))){f.life=0;continue;}
     for(const u of w.units)if(u.race!=='dragon'&&Math.abs(u.x-f.x)<1.1&&Math.abs(u.y-f.y)<1.1)u.health-=9;
-    for(const c of w.cities)if(Math.hypot(c.x-f.x,c.y-f.y)<2)c.hp-=2;
+    for(const c of w.cities){if(Math.hypot(c.x-f.x,c.y-f.y)<2)c.hp-=2;for(const b of c.buildings||[])if(b.hp>0&&Math.hypot(b.x-f.x,b.y-f.y)<1.5)b.hp=Math.max(0,b.hp-25);}
     f.life--;
     if(w.rules.fireSpread&&Math.random()<.32){const [dx,dy]=[[1,0],[-1,0],[0,1],[0,-1]][Math.floor(Math.random()*4)];ignite(w,f.x+dx,f.y+dy);}
     if(f.life<=0){w.tiles[f.y*W+f.x]='scorched';terrainChanged=true;}
@@ -218,7 +306,7 @@ function updateFires(w) {
 }
 function monsterCombat(w) {
   if(!w.rules.hostileMonsters)return;
-  for(const c of w.cities.filter(city=>city.level>=4)){const enemy=w.units.find(u=>MONSTERS.includes(u.race)&&u.health>0&&Math.hypot(u.x-c.x,u.y-c.y)<6);if(enemy)enemy.health-=12;}
+  for(const c of w.cities.filter(city=>buildingActive(city,'tower'))){const enemy=w.units.find(u=>MONSTERS.includes(u.race)&&u.health>0&&Math.hypot(u.x-c.x,u.y-c.y)<6);if(enemy)enemy.health-=12;}
   for(const guard of w.units.filter(u=>u.warrior&&u.health>0&&u.activity==='Defending')) {const monster=w.units.find(v=>MONSTERS.includes(v.race)&&v.health>0&&Math.hypot(v.x-guard.x,v.y-guard.y)<1.7);if(monster){monster.health-=guard.traits.includes('Strong')?20:13;if(monster.health<=0)guard.kills++;}}
   for(const monster of w.units.filter(u=>MONSTERS.includes(u.race)&&u.health>0)) {
     const victim=w.units.find(u=>!MONSTERS.includes(u.race)&&u.health>0&&Math.hypot(u.x-monster.x,u.y-monster.y)<1.7);
@@ -255,11 +343,12 @@ export function act(w,tool,x,y,size=3) {
   }
   if(['stone','iron','gold'].includes(tool)){addResource(w,x,y,tool);return;}
   if(tool==='tree'||tool==='flower') {w.terrainRevision=(w.terrainRevision||0)+1;for(let dy=-size;dy<=size;dy++)for(let dx=-size;dx<=size;dx++){const xx=x+dx,yy=y+dy,idx=yy*W+xx;if(xx>=0&&xx<W&&yy>=0&&yy<H&&dx*dx+dy*dy<=size*size&&['grass','forest'].includes(w.tiles[idx])){w.tiles[idx]=tool==='tree'?'forest':'grass';w.decor[idx]=tool==='flower'?.985:Math.random()*.25;}}return;}
-  if(tool==='heal'){w.units.forEach(u=>{if(Math.hypot(u.x-x,u.y-y)<size*2){u.health=u.maxHealth;u.infected=false;u.infectionAge=0;u.zombieInfection=false;u.cursed=false;u.blessed=true;}});w.effects.push({x,y,type:'heal',life:35});return;}
+  if(tool==='heal'){w.units.forEach(u=>{if(Math.hypot(u.x-x,u.y-y)<size*2){u.health=u.maxHealth;u.infected=false;u.infectionAge=0;u.zombieInfection=false;u.cursed=false;u.blessed=true;}});for(const c of w.cities)for(const b of c.buildings||[])if(Math.hypot(b.x-x,b.y-y)<size*2&&isLand(tileAt(w,b.x,b.y)))b.hp=100;w.effects.push({x,y,type:'heal',life:35});return;}
   if(tool==='rain'){w.fires=w.fires.filter(f=>Math.hypot(f.x-x,f.y-y)>size*2);w.terrainRevision=(w.terrainRevision||0)+1;for(let dy=-size*2;dy<=size*2;dy++)for(let dx=-size*2;dx<=size*2;dx++){const xx=x+dx,yy=y+dy;if(xx>=0&&xx<W&&yy>=0&&yy<H&&w.tiles[yy*W+xx]==='desert')w.tiles[yy*W+xx]='grass';}w.effects.push({x,y,type:'rain',life:40});return;}
   if(tool==='fire'){ignite(w,x,y);for(let dy=-size;dy<=size;dy++)for(let dx=-size;dx<=size;dx++)if(dx*dx+dy*dy<=size*size&&Math.random()<.5)ignite(w,x+dx,y+dy);event(w,'Fire sweeps the land','Flames spread until they burn out or rain puts them out.');return;}
   if(tool==='war'){for(let i=0;i<w.kingdoms.length;i++)for(let j=i+1;j<w.kingdoms.length;j++)startWar(w,w.kingdoms[i],w.kingdoms[j],false);event(w,'The drums of war','The kingdoms have turned against each other.');return;}
   if(tool==='inspire'){const c=w.cities.find(city=>Math.hypot(city.x-x,city.y-y)<=Math.max(5,size*2));return c?inspireVillage(w,c.id):{ok:false,message:'Click near a settlement to inspire it.'};}
+  if(tool==='demolish')return demolishBuilding(w,x,y,Math.max(3,size));
   if(tool==='rebellion'){const c=w.cities.find(city=>Math.hypot(city.x-x,city.y-y)<=Math.max(5,size*2));if(c)rebel(w,c);return;}
   if(tool==='peace'){w.wars=[];syncWarFlags(w);event(w,'A time of peace','The kingdoms have laid down their arms.');return;}
   if(tool==='inspect')return;
@@ -269,6 +358,7 @@ export function act(w,tool,x,y,size=3) {
   if(tool==='plague'){w.units.forEach(u=>{if(Math.hypot(u.x-x,u.y-y)<size*2&&!u.traits.includes('Immune')&&!MONSTERS.includes(u.race)){u.infected=true;u.infectionAge=0;}});event(w,'A plague spreads','A mysterious sickness has appeared.');}
   else {
     w.units=w.units.filter(u=>Math.hypot(u.x-x,u.y-y)>radius*(.7+Math.random()*.3));
+    for(const c of w.cities)for(const b of c.buildings||[])if(Math.hypot(b.x-x,b.y-y)<radius)b.hp=0;
     if(['bomb','meteor','lightning'].includes(tool)){
       w.terrainRevision=(w.terrainRevision||0)+1;
       for(let dy=-radius;dy<=radius;dy++)for(let dx=-radius;dx<=radius;dx++){const xx=x+dx,yy=y+dy;if(xx>=0&&xx<W&&yy>=0&&yy<H&&dx*dx+dy*dy<radius*radius*(.75+Math.random()*.3)){const idx=yy*W+xx;if(!['deep','water'].includes(w.tiles[idx]))w.tiles[idx]=tool==='bomb'?'water':'scorched';}}
@@ -294,21 +384,22 @@ function cityEconomy(w,c) {
   const residents=w.units.filter(u=>u.home===c.id && u.health>0), k=w.kingdoms.find(k=>k.id===c.kid); if(!k) return;
   if(!residents.length){c.abandonedSince??=w.year;if(w.year-c.abandonedSince>7){w.cities=w.cities.filter(other=>other.id!==c.id);event(w,`${c.name} was abandoned`,'No villagers remain to keep the settlement alive.');}return;}
   c.abandonedSince=null;
+  ensureBuildings(w,c,residents.length);maintainBuildings(w,c);
   const capital=w.cities.find(city=>city.kid===c.kid);
   if(capital?.id===c.id)c.loyalty=100;else if(capital){const distance=Math.hypot(c.x-capital.x,c.y-capital.y);const target=clamp(100-Math.max(0,distance-12)*1.5-(k.atWar?20:0)-(c.food<5?25:0),0,100);c.loyalty=clamp(c.loyalty+(target-c.loyalty)*.1,0,100);if(w.rules.rebellions&&c.loyalty<45&&Math.random()<.08){rebel(w,c);return;}}
   if(c.food>10)c.hp=Math.min(100,c.hp+.5);
   let fertile=0, forest=0;
   for(let dy=-4;dy<=4;dy++)for(let dx=-4;dx<=4;dx++){const x=c.x+dx,y=c.y+dy;if(x>=0&&x<W&&y>=0&&y<H){const t=tileAt(w,x,y);if(['grass','forest','enchanted'].includes(t))fertile++;if(t==='forest'||t==='enchanted')forest++;}}
   c.wood=clamp(c.wood+.5+forest*.08,0,150);
-  if(c.level>=3){c.stone=clamp(c.stone+.8,0,150);c.iron=clamp(c.iron+.25,0,150);c.gold=clamp(c.gold+.14,0,150);}
+  if(buildingActive(c,'mine')){c.stone=clamp(c.stone+.8,0,150);c.iron=clamp(c.iron+.25,0,150);c.gold=clamp(c.gold+.14,0,150);}
   for(const r of w.resources){if(r.amount>0&&Math.hypot(r.x-c.x,r.y-c.y)<10){const n=Math.min(r.amount,1+residents.length*.04);r.amount-=n;c[r.type]=clamp(c[r.type]+n,0,150);}}
   w.resources=w.resources.filter(r=>r.amount>0);
-  const harvest=2+fertile*.20+(c.level>=2?2:0)+(c.level>=3?3:0);
+  const harvest=2+fertile*.20+(buildingActive(c,'farm')?2:0)+(buildingActive(c,'windmill')?3:0)+(k.techLevel||0)*.5;
   c.food=clamp(c.food+harvest-(w.rules.hunger?residents.length*.34:0),0,150);
   if(w.rules.hunger && c.food<1) for(const u of residents) u.health-=12;
-  else for(const u of residents) if(!u.infected) u.health=Math.min(u.maxHealth,u.health+(c.level>=6?4:2));
-  if(c.level>=4&&residents.filter(u=>u.warrior).length<Math.floor(residents.length*.35)){const recruit=residents.find(u=>!u.warrior&&u.age>=16);if(recruit)recruit.warrior=true;}
-  if(w.rules.reproduction && residents.length>=2 && residents.length<CIV_STAGES[c.level-1].housing && c.food>8 && Math.random()<.9){
+  else for(const u of residents) if(!u.infected) u.health=Math.min(u.maxHealth,u.health+(buildingActive(c,'temple')?4:2));
+  if(buildingActive(c,'barracks')&&residents.filter(u=>u.warrior).length<Math.floor(residents.length*.35)){const recruit=residents.find(u=>!u.warrior&&u.age>=16);if(recruit)recruit.warrior=true;}
+  if(w.rules.reproduction && residents.length>=2 && residents.length<villageHousing(c,residents.length) && c.food>8 && Math.random()<.9){
     if(spawn(w,c.x,c.y,k.race,k.id,c.id,true))c.food=Math.max(0,c.food-3);
   }
   upgradeVillage(w,c,residents.length);
@@ -326,11 +417,11 @@ function resolveWars(w) {
     const ua=w.units.filter(u=>u.home===ca.id&&u.health>0),ub=w.units.filter(u=>u.home===cb.id&&u.health>0);
     if(!ua.length||!ub.length)continue;
     // Nearby villages exchange raids. Population and the proportion of warriors determine the outcome.
-    const sa=ua.length+ua.filter(u=>u.warrior).length*1.4+Math.random()*8, sb=ub.length+ub.filter(u=>u.warrior).length*1.4+Math.random()*8;
+    const sa=ua.length+ua.filter(u=>u.warrior).length*(1.4+(a.techLevel||0)*.2)+Math.random()*8, sb=ub.length+ub.filter(u=>u.warrior).length*(1.4+(b.techLevel||0)*.2)+Math.random()*8;
     const [victors,losers,target,attacker]=sa>sb?[ua,ub,cb,a]:[ub,ua,ca,b];
     for(const u of losers)if(Math.random()<.16)u.health-=25+Math.random()*20;
     for(const u of victors)if(Math.random()<.06)u.health-=20;
-    target.hp-=(12+Math.min(15,Math.abs(sa-sb)))*(target.level>=4?.65:1);
+    target.hp-=(12+Math.min(15,Math.abs(sa-sb)))*(buildingActive(target,'tower')?.65:1);
     w.effects.push({x:target.x,y:target.y,type:'battle',life:25});
     if(target.hp<=0){const previous=target.kid;target.kid=attacker.id;target.hp=75;target.lastExpansion=w.year;for(const u of w.units)if(u.home===target.id&&u.kid===previous)u.kid=attacker.id;event(w,`${target.name} was captured`,`${attacker.name} has claimed the settlement.`);reconcile(w);}
   }
@@ -422,7 +513,7 @@ export function step(w) {
     for(const wolf of w.units.filter(u=>u.race==='wolf')){const prey=w.units.find(u=>u.race==='sheep'&&Math.hypot(u.x-wolf.x,u.y-wolf.y)<1.5);if(prey&&Math.random()<.4){prey.health-=35;if(prey.health<=0)wolf.kills++;}}
     reconcile(w);
   }
-  if(w.tick%160===0)supplyVillages(w);
+  if(w.tick%160===0){supplyVillages(w);advanceKingdoms(w);}
   if(w.tick%180===0)resolveWars(w);
   if(w.tick%1200===0&&w.rules.naturalDisasters){const c=w.cities[Math.floor(Math.random()*w.cities.length)];if(c){const count=w.fires.length;ignite(w,c.x,c.y);if(w.fires.length>count)event(w,'A natural fire begins',`A fire has started near ${c.name}.`);}}
   if(w.tick%360===0&&w.rules.diplomacy&&w.kingdoms.length>1&&Math.random()<.32){
@@ -506,19 +597,21 @@ export function draw(ctx,w,showBorders=true){
  for(const c of w.cities){
   const k=w.kingdoms.find(k=>k.id===c.kid);if(!k)continue;
   const x=c.x*T,y=c.y*T,pop=w.units.filter(u=>u.home===c.id).length;
-  const canBuild=(dx,dy)=>isLand(tileAt(w,c.x+dx/T,c.y+dy/T));
   ctx.fillStyle='#b8a276';ctx.globalAlpha=.72;ctx.fillRect(x-48,y+8,96,3);ctx.fillRect(x-1,y-31,3,64);ctx.globalAlpha=1;
-  if(c.level>=2){for(const [fx,fy] of [[-52,23],[-52,32]]){rect(ctx,'#8d8150',x+fx,y+fy,19,7);for(let row=0;row<3;row++)rect(ctx,'#d3c378',x+fx+1,y+fy+1+row*2,17,1);}}
-  const spots=[[-21,-5],[21,-5],[-23,16],[23,16],[-8,28],[10,28],[-37,4],[37,4],[-25,-24],[25,-24]];
-  const count=Math.min(spots.length,Math.max(3,Math.ceil(pop/7)));
-  for(let j=0;j<count;j++)if(canBuild(...spots[j]))house(ctx,x+spots[j][0],y+spots[j][1],k.race,c.level,j%2);
-  rect(ctx,'#5c4b39',x-19,y+9,6,3);rect(ctx,'#efae58',x-17,y+6,2,4);
-  if(c.level>=2&&canBuild(55,29))stockpile(ctx,x+55,y+29);
-  if(c.level>=3){if(canBuild(-55,13))windmill(ctx,x-55,y+13,c.level);if(canBuild(56,12))mine(ctx,x+56,y+12);}
-  if(c.level>=4){if(canBuild(-50,-14))watchtower(ctx,x-50,y-14,k.race);if(canBuild(50,-15))barracks(ctx,x+50,y-15,k.race,Math.max(3,c.level-1));}
-  if(c.level>=5&&canBuild(-42,37))market(ctx,x-42,y+37);
-  if(c.level>=6&&canBuild(46,38))temple(ctx,x+46,y+38,k.race);
-  townHall(ctx,x,y,k.race,CIV_STAGES[c.level-1].hall,k.color);
+  for(const b of c.buildings||[]){const bx=b.x*T,by=b.y*T;
+    if(b.hp<=0){rect(ctx,'#6e6655',bx-4,by-2,8,3);rect(ctx,'#aaa18a',bx-3,by-4,3,2);rect(ctx,'#746f60',bx+2,by-3,3,3);continue;}
+    if(b.type==='hall')townHall(ctx,bx,by,k.race,CIV_STAGES[c.level-1].hall,k.color);
+    else if(b.type==='house')house(ctx,bx,by,k.race,c.level,Number(b.key.slice(5))%2);
+    else if(b.type==='bonfire'){rect(ctx,'#5c4b39',bx-3,by,6,3);rect(ctx,'#efae58',bx-1,by-3,2,4);}
+    else if(b.type==='farm'){for(const fy of [0,9]){rect(ctx,'#8d8150',bx-9,by+fy,19,7);for(let row=0;row<3;row++)rect(ctx,'#d3c378',bx-8,by+fy+1+row*2,17,1);}}
+    else if(b.type==='stockpile')stockpile(ctx,bx,by);
+    else if(b.type==='windmill')windmill(ctx,bx,by,c.level);
+    else if(b.type==='mine')mine(ctx,bx,by);
+    else if(b.type==='tower')watchtower(ctx,bx,by,k.race);
+    else if(b.type==='barracks')barracks(ctx,bx,by,k.race,Math.max(3,c.level-1));
+    else if(b.type==='market')market(ctx,bx,by);
+    else if(b.type==='temple')temple(ctx,bx,by,k.race);
+  }
  }
  for(const u of w.units){let x=u.x*T,y=u.y*T,r=races[u.race];if(!r)continue;rect(ctx,'#424838',x,y+3,4,2);rect(ctx,u.infected?'#9f65b9':r.shirt,x,y,4,4);rect(ctx,r.color,x+1,y-2,3,3);if(u.race==='sheep'||u.race==='wolf')rect(ctx,r.color,x-1,y,5,3);if(u.race==='dragon'){rect(ctx,'#713d3a',x-3,y-2,10,4);rect(ctx,'#e79a62',x-1,y-4,6,4)}if(u.zombieInfection)rect(ctx,'#c1e67b',x+3,y-3,1,1);if(u.favorite){rect(ctx,'#f5db7f',x+1,y-7,2,5);rect(ctx,'#f5db7f',x-1,y-5,6,1)}}
  for(const e of w.effects){let x=e.x*T,y=e.y*T,alpha=e.life/45;ctx.globalAlpha=alpha;if(e.type==='heal'||e.type==='rain'){ctx.strokeStyle=e.type==='heal'?'#b5f7a8':'#90dbfa';ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,(45-e.life)*2,0,7);ctx.stroke()}else{ctx.fillStyle=e.type==='plague'?'#c68bea':'#ffdc75';ctx.beginPath();ctx.arc(x,y,(45-e.life)*1.8+5,0,7);ctx.fill();ctx.fillStyle='#f17e40';ctx.beginPath();ctx.arc(x,y,(45-e.life)*1.1+3,0,7);ctx.fill()}ctx.globalAlpha=1}
