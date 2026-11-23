@@ -1,4 +1,10 @@
 import { defineConfig } from 'vite';
+import { fileURLToPath } from 'node:url';
 
-// Relative asset URLs work both at the domain root and under GitHub Pages' /Cc/ path.
-export default defineConfig({ base: './', server: { host: '0.0.0.0', allowedHosts: true } });
+// Source lives in src/ so the repository root can hold the static Pages build.
+export default defineConfig({
+  root: fileURLToPath(new URL('./src', import.meta.url)),
+  base: './',
+  build: { outDir: '../dist', emptyOutDir: true },
+  server: { host: '0.0.0.0', allowedHosts: true },
+});

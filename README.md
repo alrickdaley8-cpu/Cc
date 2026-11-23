@@ -15,13 +15,13 @@ Open the local URL printed by Vite. To build a production bundle, run `npm run b
 
 ## GitHub Pages
 
-The repository's GitHub Pages source is the `/docs` folder on `arena/70e056f9-cc`. The game is published at [alrickdaley8-cpu.github.io/Cc/](https://alrickdaley8-cpu.github.io/Cc/). The committed files `docs/index.html` and `docs/assets/` are generated production files, required by this branch-based Pages setup. Before committing changes to the game, run:
+The repository's GitHub Pages source is the root of `arena/70e056f9-cc`. The game is published at [alrickdaley8-cpu.github.io/Cc/](https://alrickdaley8-cpu.github.io/Cc/). `index.html` and `assets/` at the repository root are generated production files; the development entry point is `src/index.html`. A second copy is generated under `docs/` so either Pages source works. Before committing game changes, run:
 
 ```sh
 npm run build:pages
 ```
 
-Commit the resulting changes under `docs/` along with the source; pushing the branch triggers GitHub Pages. The `docs/` research and simulation notes are preserved. The CI workflow checks that the committed Pages build is up to date. Browser saves are local to the site's origin and are not GitHub cloud saves. If the Pages source is changed to another branch, that branch must also contain the generated build.
+Commit generated root and `docs/` changes with the source; pushing the Pages branch deploys the site. The research and simulation notes in `docs/` are preserved. CI checks that both committed builds are current. Browser saves are local to the site's origin, not GitHub cloud saves. The game requires an HTTP server such as GitHub Pages or Vite; opening the HTML file directly may be blocked by browser module security.
 
 ## How to play
 
