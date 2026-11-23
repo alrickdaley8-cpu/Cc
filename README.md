@@ -15,9 +15,13 @@ Open the local URL printed by Vite. To build a production bundle, run `npm run b
 
 ## GitHub Pages
 
-Worldforge is a static browser game. The Pages workflow builds the game on pushes to `main` and `arena/70e056f9-cc`, then publishes `dist`. The production asset paths are relative so it works at a project URL such as `https://alrickdaley8-cpu.github.io/Cc/`.
+The repository's GitHub Pages source is the `/docs` folder on `arena/70e056f9-cc`. The game is published at [alrickdaley8-cpu.github.io/Cc/](https://alrickdaley8-cpu.github.io/Cc/). The committed files `docs/index.html` and `docs/assets/` are generated production files, required by this branch-based Pages setup. Before committing changes to the game, run:
 
-In repository **Settings → Pages**, choose **GitHub Actions** as the build and deployment source. The existing `github-pages` environment may have branch restrictions; under **Settings → Environments → github-pages**, allow `arena/70e056f9-cc` (and `main` if deploying after merge). Run the **Deploy Worldforge to GitHub Pages** workflow after changing the settings. Deploying will replace whatever currently appears at that Pages URL. Browser saves are local to the site's origin and are not GitHub cloud saves.
+```sh
+npm run build:pages
+```
+
+Commit the resulting changes under `docs/` along with the source; pushing the branch triggers GitHub Pages. The `docs/` research and simulation notes are preserved. The CI workflow checks that the committed Pages build is up to date. Browser saves are local to the site's origin and are not GitHub cloud saves. If the Pages source is changed to another branch, that branch must also contain the generated build.
 
 ## How to play
 

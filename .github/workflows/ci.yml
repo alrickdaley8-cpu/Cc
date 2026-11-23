@@ -1,0 +1,27 @@
+name: Test and verify Pages build
+
+on:
+  push:
+    branches:
+      - main
+      - arena/70e056f9-cc
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build:pages
+      - name: Verify the committed Pages build is current
+        run: git diff --exit-code -- docs && test -z "$(git ls-files --others --exclude-standard docs/assets docs/index.html docs/.nojekyll)"
