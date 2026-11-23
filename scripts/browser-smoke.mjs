@@ -17,9 +17,11 @@ try {
   const page=await browser.newPage({viewport:{width:1280,height:800}});
   page.setDefaultTimeout(12000);
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.addInitScript(()=>{window.__mapSpriteDraws=0;const draw=CanvasRenderingContext2D.prototype.drawImage;CanvasRenderingContext2D.prototype.drawImage=function(image,...args){if(image instanceof HTMLImageElement&&image.src.includes('kenney-tiny-town'))window.__mapSpriteDraws++;return draw.call(this,image,...args)};});
   await page.goto(`http://127.0.0.1:${port}/`,{waitUntil:'networkidle'});
   assert.match(await page.title(),/Worldforge/);
   assert.equal(await page.locator('canvas').count(),1);
+  await page.waitForFunction(()=>window.__mapSpriteDraws>0);
   await page.getByTitle('Pause').click();
   // Select, focus and develop a village while paused: all six visual stages are playable.
   await page.getByRole('button',{name:/Eldoria.*Human kingdom/}).click();

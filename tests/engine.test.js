@@ -235,3 +235,12 @@ test('old saves migrate into buildings and kingdom knowledge with succession',()
   const old=k.rulerId;restored.units.find(u=>u.id===old).health=0;restored.tick=159;step(restored);assert.ok(k.rulerId);assert.notEqual(k.rulerId,old);
   const again=restoreWorld(JSON.parse(JSON.stringify(restored)));assert.equal(again.kingdoms[0].techLevel,1);assert.equal(again.kingdoms[0].rulerId,k.rulerId);
 });
+test('generated rivers reach existing water and climate is reproducible',()=>{
+  const seed=123,world=newWorld(seed),same=newWorld(seed),withoutRivers=newWorld(seed,{rivers:false});
+  assert.deepEqual(world.tiles,same.tiles);
+  const river=new Set();for(let i=0;i<world.tiles.length;i++)if(world.tiles[i]==='water'&&withoutRivers.tiles[i]!=='water')river.add(i);
+  assert.ok(river.size>0);assert.ok(world.tiles.includes('desert'));assert.ok(world.tiles.includes('snow'));
+  const seen=new Set(),queue=[];for(const i of river){const x=i%W,y=Math.floor(i/W);for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=W||ny>=H)continue;const tile=withoutRivers.tiles[ny*W+nx];if(tile==='water'||tile==='deep'){seen.add(i);queue.push(i);break;}}}
+  for(let h=0;h<queue.length;h++){const i=queue[h],x=i%W,y=Math.floor(i/W);for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,ny=y+dy,ni=ny*W+nx;if(nx>=0&&ny>=0&&nx<W&&ny<H&&river.has(ni)&&!seen.has(ni)){seen.add(ni);queue.push(ni);}}}
+  assert.equal(seen.size,river.size,'all generated rivers connect to existing water');
+});

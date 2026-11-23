@@ -1,6 +1,6 @@
 # Worldforge
 
-Worldforge is an independent browser god-sandbox prototype inspired by the create, observe, and intervene loop of WorldBox. Shape a procedurally generated world, seed fantasy settlements, watch their populations develop, and experiment with nature and destructive powers. The art and code are original; WorldBox assets are not included.
+Worldforge is an independent browser god-sandbox prototype inspired by the create, observe, and intervene loop of WorldBox. Shape a procedurally generated world with rivers, varied climates and detailed coastlines, seed fantasy settlements, watch their populations develop, and experiment with nature and destructive powers. Map foliage uses CC0 art by Kenney alongside original art; WorldBox assets are not included. See [asset credits](docs/asset-credits.md).
 
 ## Run locally
 

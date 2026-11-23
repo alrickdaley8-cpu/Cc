@@ -116,6 +116,23 @@ function foundCity(w, x, y, race, initial = false, index) {
   if (!initial) event(w, `${k.name} was founded`, `A new ${race} settlement rises.`);
   return c;
 }
+// Deterministic narrow rivers follow a shortest walkable route from high ground to the sea.
+function carveRivers(tiles,seed){
+  const total=W*H,dist=new Int16Array(total),previous=new Int32Array(total),queue=new Int32Array(total);
+  dist.fill(-1);previous.fill(-1);let count=0;
+  for(let i=0;i<total;i++)if(tiles[i]==='water'||tiles[i]==='deep'){dist[i]=0;queue[count++]=i;}
+  for(let head=0;head<count;head++){
+    const i=queue[head],x=i%W,y=Math.floor(i/W);
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=W||ny>=H)continue;const ni=ny*W+nx;
+      if(dist[ni]!==-1||!isLand(tiles[ni]))continue;dist[ni]=dist[i]+1;previous[ni]=i;queue[count++]=ni;
+    }
+  }
+  const candidates=[];
+  for(let i=0;i<total;i++)if(tiles[i]==='hill'&&dist[i]>=9&&dist[i]<=40){const x=i%W,y=Math.floor(i/W);candidates.push({i,x,y,score:dist[i]*.025+hash(x,y,seed+778)});}
+  candidates.sort((a,b)=>b.score-a.score);const sources=[];
+  for(const c of candidates){if(sources.some(s=>Math.hypot(s.x-c.x,s.y-c.y)<30))continue;sources.push(c);if(sources.length===3)break;}
+  for(const source of sources){let i=source.i;while(i>=0&&dist[i]>0){tiles[i]='water';i=previous[i];}}
+}
 export function newWorld(seed = Math.random() * 10000, options = {}) {
   const tiles = [], decor = [];
   for (let y=0; y<H; y++) for (let x=0; x<W; x++) {
@@ -125,8 +142,11 @@ export function newWorld(seed = Math.random() * 10000, options = {}) {
     const v=land*.72+n*.63;
     let type=v<.35?'deep':v<.43?'water':v<.48?'sand':v<.75?'grass':v<.87?'forest':v<.96?'hill':'mountain';
     if(type==='mountain' && noise(x/11,y/11,seed+42)>.65) type='snow';
+    // Coherent cold and dry regions diversify generated maps without changing old saves.
+    if(['grass','forest','hill'].includes(type)){const climate=noise(x/24,y/24,seed+138);if(y<H*.27&&climate>.48)type='snow';else if(y>H*.48&&climate>.69)type='desert';}
     tiles.push(options.empty?'deep':type); decor.push(hash(x,y,seed+18));
   }
+  if(!options.empty&&options.rivers!==false)carveRivers(tiles,seed);
   const w = {version:4, seed, tiles, decor, units:[], cities:[], kingdoms:[], wars:[], resources:[], fires:[], rules:{...DEFAULT_RULES}, year:1, events:[], effects:[], tick:0};
   if(options.empty){event(w,'An empty world awaits','Shape the ocean into a world of your own.');return w;}
   [[.30,.37],[.67,.32],[.51,.72],[.80,.72]].forEach((p,i)=>{
@@ -571,23 +591,57 @@ function market(ctx,x,y){rect(ctx,'#735643',x-7,y-8,14,9);rect(ctx,'#e9d4ad',x-8
 function temple(ctx,x,y,race){const a=architecture[race]||architecture.human;rect(ctx,'#e1dcc3',x-8,y-15,16,16);rect(ctx,a.trim,x-9,y-17,18,3);rect(ctx,a.roof,x-6,y-20,12,3);rect(ctx,'#e9d899',x-1,y-23,2,4);rect(ctx,'#6c7469',x-2,y-7,4,7);rect(ctx,'#9ac5ba',x-6,y-12,3,4);rect(ctx,'#9ac5ba',x+3,y-12,3,4);}
 // Terrain changes infrequently; caching it avoids repainting 20,700 tiles every frame.
 const terrainCache = new WeakMap();
-function drawTerrain(ctx,w){
- for(let y=0;y<H;y++)for(let x=0;x<W;x++){let i=y*W+x,t=w.tiles[i],d=w.decor[i],p=palette[t]||palette.grass;rect(ctx,p[Math.floor(d*p.length)%p.length],x*T,y*T,T,T);
-  if(t==='deep'||t==='water'){if(d>.975){rect(ctx,t==='deep'?'#286577':'#56a09b',x*T,y*T+2,4,1);rect(ctx,t==='deep'?'#286577':'#56a09b',x*T+4,y*T+3,2,1)}}
-  else if(t==='grass'){if(d>.94){rect(ctx,'#cee38a',x*T+2,y*T+1,1,1);rect(ctx,'#4f8d4c',x*T+3,y*T+3,1,2)}else if(d<.12)rect(ctx,'#8cbd67',x*T+2,y*T+3,2,1)}
-  else if(t==='enchanted'&&d<.28){rect(ctx,'#5e8067',x*T+2,y*T+3,2,4);rect(ctx,'#d4a1d0',x*T,y*T,6,4);rect(ctx,'#f1c4e3',x*T+1,y*T,3,1)}
-  else if(t==='corrupted'&&d<.18){rect(ctx,'#413f43',x*T+2,y*T+1,2,5);rect(ctx,'#b287a5',x*T,y*T,5,2)}
-  else if(t==='infernal'&&d>.8){rect(ctx,'#e6904c',x*T+1,y*T+3,4,1)}
-  else if(t==='forest'&&d<.50)tree(ctx,x*T,y*T-2,d);
-  else if((t==='mountain'||t==='hill'||t==='snow')&&d<.38){let xx=x*T,yy=y*T;rect(ctx,t==='snow'?'#f2f3e5':'#6e7b6a',xx+1,yy+3,5,3);rect(ctx,t==='snow'?'#fffdf0':'#b6ba9d',xx+2,yy+1,3,2);rect(ctx,'#d6d8c2',xx+2,yy+1,2,1)}
+function drawTerrain(ctx,w,art){
+ const water=t=>t==='water'||t==='deep';
+ const at=(x,y)=>x<0||y<0||x>=W||y>=H?null:w.tiles[y*W+x];
+ ctx.imageSmoothingEnabled=false;
+ // Ground, foam and texture are baked into a cached layer; edits invalidate it.
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+  const i=y*W+x,t=w.tiles[i],d=w.decor[i],p=palette[t]||palette.grass,xx=x*T,yy=y*T;
+  const patch=hash(Math.floor(x/3),Math.floor(y/3),(Number.isFinite(w.seed)?w.seed:1)+91);
+  rect(ctx,p[Math.floor((patch*.65+d*.35)*p.length)%p.length],xx,yy,T,T);
+  if(water(t)){
+    const coast=t==='water'?'#80bcb1':'#458892';
+    if(at(x,y-1)&&!water(at(x,y-1)))rect(ctx,coast,xx,yy,6,1);
+    if(at(x,y+1)&&!water(at(x,y+1)))rect(ctx,coast,xx,yy+5,6,1);
+    if(at(x-1,y)&&!water(at(x-1,y)))rect(ctx,coast,xx,yy,1,6);
+    if(at(x+1,y)&&!water(at(x+1,y)))rect(ctx,coast,xx+5,yy,1,6);
+    if(d>.90){rect(ctx,t==='deep'?'#286679':'#59aaa5',xx+1,yy+2,3,1);if(d>.97)rect(ctx,t==='deep'?'#367889':'#80c6bc',xx+3,yy+3,2,1);}
+  }else if(t==='sand'||t==='desert'){
+    if(d<.19)rect(ctx,t==='sand'?'#e9d59e':'#e6c486',xx+1,yy+2,2,1);
+    if(d>.84)rect(ctx,'#b99d67',xx+3,yy+4,2,1);
+  }else if(t==='grass'||t==='forest'){
+    if(d<.20)rect(ctx,t==='grass'?'#91be6e':'#7cb163',xx+1,yy+2,2,1);
+    if(d>.87){rect(ctx,'#588c4d',xx+3,yy+3,1,2);rect(ctx,'#b9d875',xx+4,yy+2,1,1);}
+  }else if(t==='snow'){
+    if(d<.26)rect(ctx,'#f3f6e8',xx+1,yy+2,4,1);if(d>.82)rect(ctx,'#a6c4ba',xx+3,yy+4,2,1);
+  }else if(t==='infernal'){
+    if(d>.75){rect(ctx,'#e6904c',xx+1,yy+3,4,1);rect(ctx,'#f1b25c',xx+3,yy+2,1,1);}
+  }else if(t==='corrupted'&&d>.82){rect(ctx,'#ae7b9f',xx+2,yy+1,2,2);}
+  if((t==='mountain'||t==='hill')&&d<.40){rect(ctx,'#687969',xx+1,yy+3,5,3);rect(ctx,'#b6ba9d',xx+2,yy+1,3,2);rect(ctx,'#d6d8c2',xx+2,yy+1,2,1);}
  }
+ // Original fallback art keeps the world readable even if the sprite image fails to load.
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+  const i=y*W+x,t=w.tiles[i],d=w.decor[i],xx=x*T,yy=y*T;
+  let sprite=null;
+  if(t==='forest'&&d<.22)sprite=d<.11?[4,1]:[5,0];
+  else if(t==='grass'&&d<.016)sprite=[4,1];
+  else if(t==='grass'&&d>.997)sprite=[5,2];
+  else if(t==='enchanted'&&d<.13)sprite=[5,2];
+  else if(t==='snow'&&d<.06)sprite=[4,2];
+  else if(t==='desert'&&d<.025){rect(ctx,'#56804b',xx+2,yy-1,2,7);rect(ctx,'#769b58',xx,yy+1,2,2);rect(ctx,'#769b58',xx+4,yy,2,2);}
+  if(sprite&&art){ctx.drawImage(art,sprite[0]*16,sprite[1]*16,16,16,xx-2,yy-5,10,10);}
+  else if(t==='forest'&&d<.22)tree(ctx,xx,yy-2,d);
+  else if(t==='enchanted'&&d<.14){rect(ctx,'#5e8067',xx+2,yy+3,2,4);rect(ctx,'#d4a1d0',xx,yy,6,4);rect(ctx,'#f1c4e3',xx+1,yy,3,1);}
+  else if(t==='corrupted'&&d<.10){rect(ctx,'#413f43',xx+2,yy+1,2,5);rect(ctx,'#b287a5',xx,yy,5,2);}
  }
-export function draw(ctx,w,showBorders=true){
+}
+export function draw(ctx,w,showBorders=true,art=null){
  ctx.imageSmoothingEnabled=false;ctx.clearRect(0,0,W*T,H*T);
  let cached=terrainCache.get(w);
- if(!cached || cached.revision!==(w.terrainRevision||0)){
+ if(!cached || cached.art!==art || cached.revision!==(w.terrainRevision||0)){
   const layer=document.createElement('canvas');layer.width=W*T;layer.height=H*T;
-  drawTerrain(layer.getContext('2d'),w);cached={layer,revision:w.terrainRevision||0};terrainCache.set(w,cached);
+  drawTerrain(layer.getContext('2d'),w,art);cached={layer,art,revision:w.terrainRevision||0};terrainCache.set(w,cached);
  }
  ctx.drawImage(cached.layer,0,0);
  for(const r of w.resources){const x=r.x*T,y=r.y*T;rect(ctx,'#526257',x,y+2,6,4);rect(ctx,r.type==='gold'?'#e4c163':r.type==='iron'?'#aab6c1':'#b3b3a2',x+1,y,4,4);rect(ctx,'#e1dfc6',x+2,y,2,1)}
