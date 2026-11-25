@@ -22,7 +22,7 @@ export const VIEWS = [
   { name: 'cellar', f: 0, x: 12.0, z: 9.2, yaw: 3.14, pitch: -0.1, power: false },
   { name: 'lab_power', f: 0, x: 11.5, z: 16.0, yaw: 3.6, pitch: -0.1, power: true },
   { name: 'chamber', f: 0, x: 19.6, z: 18.5, yaw: -1.57, pitch: -0.05, power: true },
-  { name: 'listener', f: 1, x: 15.5, z: 16.5, yaw: 0, pitch: 0.15, listener: { f: 1, x: 15.5, z: 13.0 } },
+  { name: 'listener', f: 1, x: 15.5, z: 16.5, yaw: 0, pitch: 0.15, listener: { f: 1, x: 15.5, z: 13.0, yaw: Math.PI / 2, state: 'scripted' } },
   { name: 'listener_close', f: 1, x: 15.5, z: 15.0, yaw: 0, pitch: 0.3, listener: { f: 1, x: 15.4, z: 13.4, yaw: 0, state: 'scripted' } },
   { name: 'stairs_up', f: 1, x: 14.9, z: 11.5, yaw: 0, pitch: 0.25 },
 ];
@@ -40,10 +40,11 @@ for (const v of VIEWS) {
   if (only && v.name !== only) continue;
   await p.evaluate((v) => {
     const g = window.__game;
+    if (g.mode !== 'playing') { g.ui.hideScreen(); g.setMode('playing'); g.player.frozen = false; g.player.lookOverride = null; g.listener.toBackstage(); }
     g.setPower(!!v.power); g.flags.power = !!v.power;
     g.teleport(v.f, v.x, v.z, v.yaw); g.player.pitch = v.pitch; g.player.torchOn = true; g.player.battery = 1;
     const L = g.listener;
-    if (v.listener) { L.placeAt(v.listener.f, v.listener.x, v.listener.z, v.listener.yaw ?? Math.PI); L.setState(v.listener.state || 'patrol'); L.goal = null; L.listenT = 3; }
+    if (v.listener) { L.placeAt(v.listener.f, v.listener.x, v.listener.z, v.listener.yaw ?? Math.PI); if (v.listener.state === 'scripted') { g.director.stop(); L.scripted([{ f: v.listener.f, x: v.listener.x, z: v.listener.z }], null, false); L.yaw = v.listener.yaw ?? 0; } else { L.setState(v.listener.state || 'patrol'); L.goal = null; } L.listenT = 3; }
     else { L.toBackstage(); }
     g.fade = 0; g.fadeTarget = 0;
   }, v);

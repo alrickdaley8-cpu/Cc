@@ -36,3 +36,21 @@ A **risk-ordered vertical slice** built around one sentence, *"you are hunted by
 - **One debug API** (`window.__game`) shared by the bot, the screenshot tests and manual debugging.
 - **Never claim a feature works unless the harness or a test has exercised it.**
 - **Process retrospectives**: at the end of each stage, note what slowed me down and change the process. These are logged in `DEVLOG.md`.
+
+## Revisions made during development
+
+The method changed as it met reality. Each revision is backed by an incident in [DEVLOG.md](DEVLOG.md).
+
+| # | Original plan | What happened | Revised rule |
+|---|---|---|---|
+| 1 | "Testing harness first", but in practice only the screenshot harness and unit tests existed early | The e2e bot, written once the game was playable, passed **5/12** on its first run and exposed three logic bugs that screenshots couldn't see | The bot is part of the harness. **Every change re-runs the full e2e suite** before commit (14 tests, about 75 s). |
+| 2 | Readability gate = mean luminance in a band | The Listener rendered as a **white blob** with a perfectly normal mean (.047). The mean hides local blow-out and silhouettes. Also, the torch-off scene was black at any setting, which no torch-on screenshot could reveal. | Luminance stats are a **smoke alarm, not a verdict**. Every key view is *looked at*. Suspicious renders are debugged by **isolation** (hide parts, read light values). Readability is handed to the player through a live calibration screen. |
+| 3 | Fairness gate = "the monster may not catch a hidden player it never saw hide" | A single survival proved nothing: the first hiding run passed, then failed 3/10 in repeated trials | Fairness claims need **15–20 trials plus a control** (for example, not holding breath must still be dangerous, otherwise the mechanic is decoration). |
+| 4 | Pacing gate = one simulated hunt | A single 20-minute log is noisy (2–7 deaths per run) | Pacing conclusions use **3 runs**, and deaths are logged with **causes**, which led to the death-cause screen. |
+| 5 | Tests assert end states | The bottle test passed for the wrong reason: the Listener was reacting to a teleport noise | Tests assert the **causal signal** (it heard `glass`, and its goal equals the shard position) and check their preconditions. |
+| 6 | "Behaviours unlock over time" was researched but deferred | Review showed the creature never adapted, so one trick worked forever | Implemented as player-driven learning, with **each unlock telegraphed once** so it reads as a rule rather than cheating. |
+
+### What I'd keep and change next time
+
+- **Keep:** risk-first ordering (audio and AI before content), the single debug API shared by every tool, data-driven levels, and accelerated simulation (20 minutes tested in about 8 s).
+- **Change:** write the e2e bot alongside the first interactable system; define fairness experiments *before* tuning numbers; and get human playtesters for the one thing no bot can measure: whether it is actually frightening.
