@@ -43,7 +43,8 @@ She hopes to cut the first gramophone record of perfect silence by the summer.`,
 6. A light in its face makes it angry. Point the torch at the floor.
 7. When the clock does 13 it means it is LISTENING.
 8. It talks like Daddy now. IT IS NOT DADDY. Do not answer.
-9. If you have to make it go somewhere, throw something. It goes to the noise.`,
+9. If you have to make it go somewhere, throw something. It goes to the noise.
+10. NEVER let it see you get in the cupboard. It opens the door. Run round a corner first.`,
   },
   note_kettle: {
     title: 'Note propped against the kettle',

@@ -1,0 +1,237 @@
+{
+ "minutes": 20,
+ "summary": {
+  "phaseSeconds": {
+   "peak": 284,
+   "relax": 385,
+   "build": 530
+  },
+  "peaks": 8,
+  "firstPeakAt": 164,
+  "peakGapMean": 143,
+  "peakGapMin": 105,
+  "peakGapMax": 169,
+  "chases": 3,
+  "inspections": 6,
+  "hides": 15,
+  "deaths": 3,
+  "deathsWhileHidden": 1,
+  "longestCalmSec": 231,
+  "longestTenseSec": 3,
+  "learned": {
+   "habit": true
+  }
+ },
+ "menacePerMinute": [
+  0.06,
+  0.04,
+  0.04,
+  0.03,
+  0.05,
+  0.03,
+  0,
+  0.03,
+  0.03,
+  0.08,
+  0.07,
+  0.03,
+  0.03,
+  0.01,
+  0.02,
+  0.04,
+  0.05,
+  0.08,
+  0.07,
+  0.03
+ ],
+ "phaseEvents": [
+  {
+   "t": 39,
+   "phase": "relax"
+  },
+  {
+   "t": 89,
+   "phase": "build"
+  },
+  {
+   "t": 164,
+   "phase": "peak"
+  },
+  {
+   "t": 204,
+   "phase": "relax"
+  },
+  {
+   "t": 249,
+   "phase": "build"
+  },
+  {
+   "t": 324,
+   "phase": "peak"
+  },
+  {
+   "t": 364,
+   "phase": "relax"
+  },
+  {
+   "t": 411,
+   "phase": "build"
+  },
+  {
+   "t": 486,
+   "phase": "peak"
+  },
+  {
+   "t": 495,
+   "phase": "relax"
+  },
+  {
+   "t": 530,
+   "phase": "build"
+  },
+  {
+   "t": 605,
+   "phase": "peak"
+  },
+  {
+   "t": 643,
+   "phase": "relax"
+  },
+  {
+   "t": 699,
+   "phase": "build"
+  },
+  {
+   "t": 774,
+   "phase": "peak"
+  },
+  {
+   "t": 814,
+   "phase": "relax"
+  },
+  {
+   "t": 874,
+   "phase": "build"
+  },
+  {
+   "t": 879,
+   "phase": "peak"
+  },
+  {
+   "t": 880,
+   "phase": "relax"
+  },
+  {
+   "t": 936,
+   "phase": "build"
+  },
+  {
+   "t": 1011,
+   "phase": "peak"
+  },
+  {
+   "t": 1051,
+   "phase": "relax"
+  },
+  {
+   "t": 1087,
+   "phase": "build"
+  },
+  {
+   "t": 1162,
+   "phase": "peak"
+  }
+ ],
+ "deaths": [
+  {
+   "t": 495,
+   "hidden": false,
+   "phase": "peak",
+   "cause": "seen",
+   "screen": "seen",
+   "hideT": 28.6,
+   "breath": 1
+  },
+  {
+   "t": 643,
+   "hidden": true,
+   "phase": "peak",
+   "cause": "seen",
+   "screen": "sawHide",
+   "hideT": 3.2,
+   "breath": 1
+  },
+  {
+   "t": 880,
+   "hidden": false,
+   "phase": "peak",
+   "cause": "seen",
+   "screen": "seen",
+   "hideT": 4,
+   "breath": 1
+  }
+ ],
+ "hides": [
+  {
+   "t": 3,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 39,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 43,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 113,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 206,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 215,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 262,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 364,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 439,
+   "id": "hide_gallery"
+  },
+  {
+   "t": 557,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 640,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 711,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 814,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 953,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 1100,
+   "id": "hide_nursery"
+  }
+ ],
+ "errors": []
+}

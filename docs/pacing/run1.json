@@ -1,0 +1,300 @@
+{
+ "minutes": 20,
+ "summary": {
+  "phaseSeconds": {
+   "peak": 217,
+   "relax": 563,
+   "build": 418
+  },
+  "peaks": 11,
+  "firstPeakAt": 90,
+  "peakGapMean": 111,
+  "peakGapMin": 45,
+  "peakGapMax": 177,
+  "chases": 6,
+  "inspections": 5,
+  "hides": 15,
+  "deaths": 6,
+  "deathsWhileHidden": 4,
+  "longestCalmSec": 177,
+  "longestTenseSec": 2,
+  "learned": {
+   "habit": true
+  }
+ },
+ "menacePerMinute": [
+  0.06,
+  0.04,
+  0.06,
+  0.07,
+  0.08,
+  0.02,
+  0.02,
+  0.07,
+  0.06,
+  0.08,
+  0.05,
+  0,
+  0.18,
+  0.07,
+  0,
+  0.04,
+  0.23,
+  0.07,
+  0.04,
+  0.09
+ ],
+ "phaseEvents": [
+  {
+   "t": 39,
+   "phase": "relax"
+  },
+  {
+   "t": 88,
+   "phase": "build"
+  },
+  {
+   "t": 90,
+   "phase": "peak"
+  },
+  {
+   "t": 94,
+   "phase": "relax"
+  },
+  {
+   "t": 129,
+   "phase": "build"
+  },
+  {
+   "t": 149,
+   "phase": "peak"
+  },
+  {
+   "t": 149,
+   "phase": "relax"
+  },
+  {
+   "t": 205,
+   "phase": "build"
+  },
+  {
+   "t": 280,
+   "phase": "peak"
+  },
+  {
+   "t": 320,
+   "phase": "relax"
+  },
+  {
+   "t": 382,
+   "phase": "build"
+  },
+  {
+   "t": 457,
+   "phase": "peak"
+  },
+  {
+   "t": 497,
+   "phase": "relax"
+  },
+  {
+   "t": 539,
+   "phase": "build"
+  },
+  {
+   "t": 543,
+   "phase": "peak"
+  },
+  {
+   "t": 546,
+   "phase": "relax"
+  },
+  {
+   "t": 581,
+   "phase": "build"
+  },
+  {
+   "t": 588,
+   "phase": "peak"
+  },
+  {
+   "t": 591,
+   "phase": "relax"
+  },
+  {
+   "t": 647,
+   "phase": "build"
+  },
+  {
+   "t": 653,
+   "phase": "peak"
+  },
+  {
+   "t": 655,
+   "phase": "relax"
+  },
+  {
+   "t": 732,
+   "phase": "build"
+  },
+  {
+   "t": 807,
+   "phase": "peak"
+  },
+  {
+   "t": 847,
+   "phase": "relax"
+  },
+  {
+   "t": 909,
+   "phase": "build"
+  },
+  {
+   "t": 914,
+   "phase": "peak"
+  },
+  {
+   "t": 917,
+   "phase": "relax"
+  },
+  {
+   "t": 952,
+   "phase": "build"
+  },
+  {
+   "t": 1027,
+   "phase": "peak"
+  },
+  {
+   "t": 1067,
+   "phase": "relax"
+  },
+  {
+   "t": 1120,
+   "phase": "build"
+  },
+  {
+   "t": 1195,
+   "phase": "peak"
+  }
+ ],
+ "deaths": [
+  {
+   "t": 94,
+   "hidden": true,
+   "phase": "peak",
+   "cause": "seen",
+   "screen": "sawHide",
+   "hideT": 3.1,
+   "breath": 1
+  },
+  {
+   "t": 149,
+   "hidden": false,
+   "phase": "peak",
+   "cause": "seen",
+   "screen": "seen",
+   "hideT": 3.1,
+   "breath": 1
+  },
+  {
+   "t": 546,
+   "hidden": true,
+   "phase": "peak",
+   "cause": "seen",
+   "screen": "sawHide",
+   "hideT": 2,
+   "breath": 1
+  },
+  {
+   "t": 591,
+   "hidden": true,
+   "phase": "peak",
+   "cause": "seen",
+   "screen": "sawHide",
+   "hideT": 2,
+   "breath": 0.98
+  },
+  {
+   "t": 655,
+   "hidden": false,
+   "phase": "peak",
+   "cause": "seen",
+   "screen": "seen",
+   "hideT": 2,
+   "breath": 0.98
+  },
+  {
+   "t": 917,
+   "hidden": true,
+   "phase": "peak",
+   "cause": "seen",
+   "screen": "sawHide",
+   "hideT": 2.6,
+   "breath": 1
+  }
+ ],
+ "hides": [
+  {
+   "t": 3,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 91,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 238,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 321,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 417,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 497,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 544,
+   "id": "hide_master"
+  },
+  {
+   "t": 589,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 759,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 810,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 847,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 914,
+   "id": "hide_southhall"
+  },
+  {
+   "t": 1023,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 1066,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 1147,
+   "id": "hide_nursery"
+  }
+ ],
+ "errors": []
+}

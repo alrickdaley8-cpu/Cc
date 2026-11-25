@@ -123,7 +123,7 @@ class Game {
     this.applySettings();
     this.story.restore(this.initialSnapshot);
     this.story.read.clear(); this.story.stats.deaths = 0;
-    this.director.resetLearning();
+    this.director.resetLearning(); this.director.recentDeaths = [];
     this.story.newGame();
     this.time = 0;
     this.begin();
@@ -141,6 +141,11 @@ class Game {
     const cp = this.story.checkpoint || this.initialSnapshot;
     const deaths = this.story.stats.deaths;
     this.story.restore(cp); this.story.stats.deaths = deaths;
+    // mercy: a full relief window after waking up (the pacing log showed 3 deaths in 100 s with the old 12 s),
+    // growing if you keep dying close together
+    const D = this.director, now = this.playClock || 0;
+    D.recentDeaths = (D.recentDeaths || []).filter((t) => now - t < 240); D.recentDeaths.push(now);
+    if (D.enabled) { D.phase = 'relax'; D.phaseT = 0; D.intensity = 0; D.relaxFor = this.difficulty.relaxMin * (1 + 0.6 * (D.recentDeaths.length - 1)); }
     this.post.uniforms.uFlash.value = 0;
     this.begin();
   }
@@ -158,6 +163,8 @@ class Game {
   }
   onCaught(listener, spot) {
     if (this.mode !== 'playing') return;
+    const cause = spot ? (listener.sawHide === spot ? 'sawHide' : 'breath') : (listener.prevState === 'chase' ? listener.chaseCause || 'seen' : listener.seesPlayer ? 'seen' : 'heard');
+    this.lastDeathCause = cause;
     this.setMode('dead');
     this.story.stats.deaths++;
     const p = this.player;
@@ -178,7 +185,7 @@ class Game {
     if (!settings.reduceFlashing) this.forceFlicker = 0.6; // the dynamo stutters as it leans in
     bus.emit('caught', { hidden: !!spot });
     setTimeout(() => { this.fadeTarget = 1; }, this.bot ? 10 : 1500);
-    setTimeout(() => { this.input.exitLock(); this.ui.death(); }, this.bot ? 50 : 2700);
+    setTimeout(() => { this.input.exitLock(); this.ui.death(cause); }, this.bot ? 50 : 2700);
   }
 
   // ---------------------------------------------------------------- helpers used by systems
@@ -273,7 +280,7 @@ class Game {
     input.endFrame();
   }
   update(dt, dead = false) {
-    this.time += dt;
+    this.time += dt; this.playClock = (this.playClock || 0) + dt; // playClock never rewinds on retry
     const p = this.player, L = this.listener;
     p.update(dt, dead ? { consumeMouse: () => [0, 0], isDown: () => false, wasPressed: () => false } : this.input);
     this.doors.update(dt);

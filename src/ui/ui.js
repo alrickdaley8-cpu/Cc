@@ -158,8 +158,15 @@ export class UI {
     this.bind('#b-controls', () => this.controls(() => this.pause()));
     this.bind('#b-quit', () => this.game.showTitle());
   }
-  death() {
-    this.showScreen(`<div class="death"><h1>IT HEARD YOU</h1><p>…and now it has your voice.</p><button id="b-retry">Wake up (last checkpoint)</button><button id="b-quit" class="small">Quit to title</button></div>`, 'deathscreen');
+  death(cause = 'heard') {
+    // Fairness: always say *why*. A death you understand is a lesson; one you don't is noise.
+    const C = {
+      sawHide: ['IT SAW YOU HIDE', 'It was watching when you climbed in. Break its line of sight first — then hide.'],
+      breath: ['IT HEARD YOU', 'It heard you breathing. When it stops outside, hold SPACE — and count.'],
+      seen: ['IT SAW YOU', 'Keep the torch off its face and out of its sight. Corners and doors break its line of sight.'],
+      heard: ['IT HEARD YOU', 'Crouch near it, keep off the chalk-marked boards, and never run when it is close.'],
+    }[cause] || ['IT HEARD YOU', ''];
+    this.showScreen(`<div class="death"><h1>${C[0]}</h1><p>…and now it has your voice.</p>${C[1] ? `<p class="tip">${esc(C[1])}</p>` : ''}<button id="b-retry">Wake up (last checkpoint)</button><button id="b-quit" class="small">Quit to title</button></div>`, 'deathscreen');
     this.bind('#b-retry', () => this.game.retry());
     this.bind('#b-quit', () => this.game.showTitle());
   }

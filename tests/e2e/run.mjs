@@ -148,9 +148,10 @@ await test('Listener sees the player in torchlight, chases, and catches → deat
     L.placeAt(1, 15.5, 12.0, 0); L.yaw = 0; L.patrolTo({ f: 1, x: 15.5, z: 13 });
     const seen = until(() => L.state === 'chase', 6, 0.1);
     until(() => g.mode === 'dead', 10, 0.1);
-    return { seen, mode: g.mode, deaths: S.stats.deaths };`);
+    return { seen, mode: g.mode, deaths: S.stats.deaths, cause: g.lastDeathCause };`);
   assert(r.seen, 'never started chase');
   assert(r.mode === 'dead', 'never caught, mode ' + r.mode);
+  assert(r.cause === 'seen', 'death screen should explain it SAW you, got ' + r.cause);
   await new Promise((res) => setTimeout(res, 400));
   const r2 = await run(p, `const scr = !!document.querySelector('.death'); g.retry(); return { scr, mode: g.mode, keys: [...S.inv.keys], Lstate: L.state, hidden: g.player.hidden };`);
   assert(r2.scr, 'no death screen'); assert(r2.mode === 'playing', 'retry mode ' + r2.mode);

@@ -90,3 +90,5 @@ button.small { font-size: 14px; color: #8b8371; }
 .jpage .notes li:hover { color: #fff3d6; }
 .jpage .none { list-style: none; margin-left: -18px; color: #6f6858; font-style: italic; }
 .jfoot { margin-top: 22px; font-size: 12px; color: #6f6858; }
+
+.death .tip { font-style: normal; font-size: 14px; color: #a99; max-width: 520px; margin: 4px auto 22px; line-height: 1.5; letter-spacing: .02em; }

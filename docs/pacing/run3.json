@@ -1,0 +1,301 @@
+{
+ "minutes": 20,
+ "summary": {
+  "phaseSeconds": {
+   "peak": 206,
+   "relax": 547,
+   "build": 445
+  },
+  "peaks": 11,
+  "firstPeakAt": 99,
+  "peakGapMean": 109,
+  "peakGapMin": 54,
+  "peakGapMax": 161,
+  "chases": 7,
+  "inspections": 3,
+  "hides": 12,
+  "deaths": 7,
+  "deathsWhileHidden": 3,
+  "longestCalmSec": 147,
+  "longestTenseSec": 5,
+  "learned": {
+   "habit": true
+  }
+ },
+ "menacePerMinute": [
+  0.06,
+  0.05,
+  0.06,
+  0.02,
+  0.01,
+  0.06,
+  0.05,
+  0.01,
+  0.09,
+  0.05,
+  0.03,
+  0.04,
+  0.08,
+  0.15,
+  0.03,
+  0.26,
+  0.12,
+  0.01,
+  0.12,
+  0.08
+ ],
+ "phaseEvents": [
+  {
+   "t": 39,
+   "phase": "relax"
+  },
+  {
+   "t": 91,
+   "phase": "build"
+  },
+  {
+   "t": 99,
+   "phase": "peak"
+  },
+  {
+   "t": 101,
+   "phase": "relax"
+  },
+  {
+   "t": 136,
+   "phase": "build"
+  },
+  {
+   "t": 211,
+   "phase": "peak"
+  },
+  {
+   "t": 251,
+   "phase": "relax"
+  },
+  {
+   "t": 295,
+   "phase": "build"
+  },
+  {
+   "t": 328,
+   "phase": "peak"
+  },
+  {
+   "t": 329,
+   "phase": "relax"
+  },
+  {
+   "t": 385,
+   "phase": "build"
+  },
+  {
+   "t": 400,
+   "phase": "peak"
+  },
+  {
+   "t": 401,
+   "phase": "relax"
+  },
+  {
+   "t": 457,
+   "phase": "build"
+  },
+  {
+   "t": 532,
+   "phase": "peak"
+  },
+  {
+   "t": 572,
+   "phase": "relax"
+  },
+  {
+   "t": 636,
+   "phase": "build"
+  },
+  {
+   "t": 641,
+   "phase": "peak"
+  },
+  {
+   "t": 645,
+   "phase": "relax"
+  },
+  {
+   "t": 680,
+   "phase": "build"
+  },
+  {
+   "t": 695,
+   "phase": "peak"
+  },
+  {
+   "t": 695,
+   "phase": "relax"
+  },
+  {
+   "t": 751,
+   "phase": "build"
+  },
+  {
+   "t": 826,
+   "phase": "peak"
+  },
+  {
+   "t": 866,
+   "phase": "relax"
+  },
+  {
+   "t": 912,
+   "phase": "build"
+  },
+  {
+   "t": 987,
+   "phase": "peak"
+  },
+  {
+   "t": 1027,
+   "phase": "relax"
+  },
+  {
+   "t": 1080,
+   "phase": "build"
+  },
+  {
+   "t": 1086,
+   "phase": "peak"
+  },
+  {
+   "t": 1089,
+   "phase": "relax"
+  },
+  {
+   "t": 1124,
+   "phase": "build"
+  },
+  {
+   "t": 1184,
+   "phase": "peak"
+  },
+  {
+   "t": 1185,
+   "phase": "relax"
+  }
+ ],
+ "deaths": [
+  {
+   "t": 101,
+   "hidden": true,
+   "phase": "peak",
+   "cause": "seen",
+   "screen": "sawHide",
+   "hideT": 0.7,
+   "breath": 0.98
+  },
+  {
+   "t": 329,
+   "hidden": false,
+   "phase": "peak",
+   "cause": "seen",
+   "screen": "seen",
+   "hideT": 4,
+   "breath": 1
+  },
+  {
+   "t": 400,
+   "hidden": false,
+   "phase": "peak",
+   "cause": "seen",
+   "screen": "seen",
+   "hideT": 4,
+   "breath": 1
+  },
+  {
+   "t": 645,
+   "hidden": true,
+   "phase": "peak",
+   "cause": "heard",
+   "screen": "sawHide",
+   "hideT": 2,
+   "breath": 0.93
+  },
+  {
+   "t": 695,
+   "hidden": false,
+   "phase": "peak",
+   "cause": "seen",
+   "screen": "seen",
+   "hideT": 2,
+   "breath": 0.93
+  },
+  {
+   "t": 1089,
+   "hidden": true,
+   "phase": "peak",
+   "cause": "seen",
+   "screen": "sawHide",
+   "hideT": 2.4,
+   "breath": 1
+  },
+  {
+   "t": 1184,
+   "hidden": false,
+   "phase": "peak",
+   "cause": "seen",
+   "screen": "seen",
+   "hideT": 2.4,
+   "breath": 1
+  }
+ ],
+ "hides": [
+  {
+   "t": 3,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 39,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 100,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 152,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 251,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 255,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 494,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 577,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 642,
+   "id": "hide_gallery"
+  },
+  {
+   "t": 991,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 1027,
+   "id": "hide_nursery"
+  },
+  {
+   "t": 1086,
+   "id": "hide_nursery"
+  }
+ ],
+ "errors": []
+}

@@ -140,7 +140,7 @@ export class Listener {
 
   startChase() {
     const g = this.game;
-    if (this.state !== 'chase') { g.audio.play('shriek', { pos: this.pos3() }); bus.emit('chaseStart'); }
+    if (this.state !== 'chase') { this.chaseCause = this.seesPlayer || this.lit ? 'seen' : 'heard'; g.audio.play('shriek', { pos: this.pos3() }); bus.emit('chaseStart'); }
     this.setState('chase'); this.chaseT = 0; this.lostT = 0; this.path = null;
     this.lastKnown = { f: g.player.floor, x: g.player.x, z: g.player.z };
   }
