@@ -17,7 +17,7 @@ import { Doors } from './game/doors.js';
 import { Interaction } from './game/interaction.js';
 import { Story } from './game/story.js';
 import { Throwables } from './game/throwables.js';
-import { CAPTIONS } from './game/content.js';
+import { CAPTIONS, NOTES } from './game/content.js';
 import { UI } from './ui/ui.js';
 
 const DIFFICULTY = {
@@ -123,6 +123,7 @@ class Game {
     this.applySettings();
     this.story.restore(this.initialSnapshot);
     this.story.read.clear(); this.story.stats.deaths = 0;
+    this.director.resetLearning();
     this.story.newGame();
     this.time = 0;
     this.begin();
@@ -151,7 +152,7 @@ class Game {
     Story.clearSaved();
     const s = this.story;
     const mins = Math.floor(this.time / 60), secs = Math.floor(this.time % 60);
-    const stats = { time: `${mins}:${String(secs).padStart(2, '0')}`, notes: `${s.read.size}/12`, cyl: s.inv.cylinders.size, deaths: s.stats.deaths };
+    const stats = { time: `${mins}:${String(secs).padStart(2, '0')}`, notes: `${s.read.size}/${Object.keys(NOTES).length}`, cyl: s.inv.cylinders.size, deaths: s.stats.deaths };
     bus.emit('ending', id);
     setTimeout(() => this.ui.ending(id, stats, found), this.bot ? 50 : 2600);
   }

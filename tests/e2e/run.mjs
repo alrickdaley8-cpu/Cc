@@ -131,10 +131,13 @@ await test('Listener hears a thrown bottle and goes to investigate it', async (p
     L.placeAt(1, 15.5, 22.0, Math.PI); L.patrolTo({ f: 1, x: 15.5, z: 22.5 }); sim(0.2);
     // throw from the north end of the hall, south toward the foyer: the shatter is loud and close to it
     g.teleport(1, 15.5, 10.8, Math.PI); g.player.pitch = 0.15; g.player.torchOn = false; S.inv.bottles = 1; S.throwBottle();
-    const before = L.state; until(() => L.state === 'investigate', 3, 0.1);
+    const before = L.state; let shard = null; const t0 = g.time;
+    until(() => (shard = g.listener.heard && g.listener.heard.kind === 'glass' && g.listener.heard.t >= t0 ? g.listener.heard : null), 3, 0.1);
     const s1 = L.state, goal = L.goal && { x: +L.goal.x.toFixed(1), z: +L.goal.z.toFixed(1) };
-    return { before, s1, goal };`);
+    return { before, s1, goal, shard: shard && { x: +shard.x.toFixed(1), z: +shard.z.toFixed(1) } };`);
+  assert(r.shard, 'listener never heard the glass');
   assert(r.s1 === 'investigate', 'listener state ' + r.s1);
+  assert(Math.hypot(r.goal.x - r.shard.x, r.goal.z - r.shard.z) < 0.5, 'investigating something other than the shatter ' + JSON.stringify(r));
   return r;
 });
 
@@ -172,6 +175,43 @@ await test('Hiding: unseen + held breath → Listener searches nearby and leaves
     return { states: [...states], mode: g.mode, hidden: !!g.player.hidden, minD: +minD.toFixed(2) };`);
   assert(r.mode === 'playing', 'player was caught while hidden & holding breath ' + JSON.stringify(r));
   assert(r.states.includes('search') || r.states.includes('investigate'), 'listener never searched: ' + r.states);
+  return r;
+});
+
+await test('It learns: after 3 bottle lures it traces the throw; a habitual hiding spot is checked longer but stays survivable', async (p) => {
+  const r = await run(p, `
+    toCellarKey(); safe(); g.director.stop();
+    const D = g.director, traced = [];
+    for (let i = 0; i < 3; i++) {
+      L.placeAt(1, 15.5, 22.0, Math.PI); L.patrolTo({ f: 1, x: 15.5, z: 22.5 }); sim(0.2);
+      g.teleport(1, 15.5, 10.8, Math.PI); g.player.pitch = 0.15; g.player.torchOn = false; S.inv.bottles = 1; S.throwBottle();
+      until(() => L.state === 'investigate', 3, 0.1);
+      g.teleport(2, 4.5, 16.5, 0); // slip away upstairs; only the throw position is left behind
+      const n0 = D.learn.glass; until(() => D.learn.glass > n0, 20, 0.1);
+      traced.push({ glass: D.learn.glass, goalZ: L.goal ? +L.goal.z.toFixed(1) : null, state: L.state });
+    }
+    const told = !!D.learn.told.glass;
+    // habit: pretend you've already survived two inspections in the nursery wardrobe
+    D.learn.spots.hide_nursery = 2;
+    const chance = D.inspectChance(0.7, { id: 'hide_nursery' }), other = D.inspectChance(0.7, { id: 'hide_guest' });
+    g.teleport(2, 19.3, 7.0); act('hide_nursery');
+    L.placeAt(2, 15.0, 3.0, 0); L.investigate({ f: 2, x: 20.0, z: 7.5 }, true);
+    let held = false, maxDur = 0;
+    for (let i = 0; i < 160 && g.mode === 'playing'; i++) {
+      const d = Math.hypot(L.x - g.player.x, L.z - g.player.z);
+      if (L.inspecting) maxDur = Math.max(maxDur, L.inspectDur);
+      const want = (!!L.inspecting || d < 1.6) && g.player.breath > 0.05;
+      if (want !== held) { g.input.simKey('Space', want); held = want; }
+      g.simulate(0.25);
+    }
+    g.input.simKey('Space', false);
+    return { traced, told, chance, other, maxDur: +maxDur.toFixed(1), mode: g.mode };`);
+  assert(r.traced.every((t, i) => t.glass === i + 1), 'glass lures not counted ' + JSON.stringify(r.traced));
+  assert(r.traced[0].goalZ > 18 && r.traced[1].goalZ > 18, 'it traced the throw before learning ' + JSON.stringify(r.traced));
+  assert(r.traced[2].goalZ < 15, 'third lure: did not turn toward the throw origin ' + JSON.stringify(r.traced));
+  assert(r.told, 'glass unlock was never telegraphed');
+  assert(r.chance > r.other, 'habit spot not more suspicious');
+  assert(r.mode === 'playing', 'habit made hiding unsurvivable ' + JSON.stringify(r));
   return r;
 });
 

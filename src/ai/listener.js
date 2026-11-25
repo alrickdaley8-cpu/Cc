@@ -48,7 +48,7 @@ export class Listener {
     this.patrolTo(goal);
   }
   patrolTo(goal) { this.bored = false; this.goal = goal; this.path = null; this.setState('patrol'); this.wanders = 2 + Math.floor(Math.random() * 3); }
-  investigate(p, fromNoise = true) { this.bored = false; this.goal = { f: p.f, x: p.x, z: p.z }; this.path = null; this.searchCenter = { ...this.goal }; this.setState('investigate'); this.fromNoise = fromNoise; }
+  investigate(p, fromNoise = true, kind = null) { this.glassLure = kind === 'glass'; this.bored = false; this.goal = { f: p.f, x: p.x, z: p.z }; this.path = null; this.searchCenter = { ...this.goal }; this.setState('investigate'); this.fromNoise = fromNoise; }
   leave(dest) { this.goal = dest; this.path = null; this.setState('leave'); this.suspicion = 0; }
   scripted(points, cb, aware = false) { this.scriptAware = aware; this.script = points.slice(); this.scriptCb = cb; this.goal = this.script.shift(); this.path = null; this.setState('scripted'); this.rig.root.visible = true; }
   placeAt(f, x, z, yaw = 0) { this.f = f; this.x = x; this.z = z; this.yaw = yaw; this.y = this.world.resolveHeight(f, x, z).y; this.rig.root.visible = true; }
@@ -71,7 +71,7 @@ export class Listener {
     if (n.src === 'player') this.suspicion = Math.min(0.95, this.suspicion + closeness * 0.6);
     this.agitation = Math.min(1, this.agitation + 0.3);
     // go and look (unless already investigating something louder & recent)
-    if (this.state !== 'investigate' || closeness > 0.2 || n.loud >= 8) this.investigate(n, true);
+    if (this.state !== 'investigate' || closeness > 0.2 || n.loud >= 8) this.investigate(n, true, n.kind);
   }
 
   perceive(dt) {
@@ -162,6 +162,18 @@ export class Listener {
     if (this.waitT > 0) { this.waitT -= dt; this.faceTowards(this.goal.x, this.goal.z, dt, 5); return; }
     const sp = (this.fromNoise ? SPEED.investigate : SPEED.investigate * 0.85) * this.game.difficulty.speed;
     if (this.follow(dt, sp)) {
+      if (this.glassLure) {
+        this.glassLure = false;
+        const D = this.game.director;
+        bus.emit('glassInvestigated'); // counts this lure (and telegraphs the unlock the moment it happens)
+        const origin = D.glassWise() ? D.throwOrigin() : null;
+        if (origin && origin.f === this.f) {
+          // learned: the glass is only where the sound went — not where you are. Search toward the throw.
+          this.waitT = 1.4; this.listenT = 1.4; this.goal = origin; this.path = null; this.fromNoise = true;
+          this.game.audio.play('inhale', { pos: this.pos3(), occlusion: this.occlusion, gain: 0.8 });
+          return;
+        }
+      }
       this.searchCenter = { ...this.goal }; this.searchPoints = 3 + Math.floor(Math.random() * 3);
       this.setState('search'); this.waitT = 1.5 + Math.random(); this.listenT = this.waitT;
       this.game.audio.play('inhale', { pos: this.pos3(), occlusion: this.occlusion, gain: 0.65 });
@@ -173,7 +185,7 @@ export class Listener {
       // standing at a hiding place, listening hard
       this.faceTowards(this.inspecting.hidePos.x, this.inspecting.hidePos.z, dt, 6);
       this.listenT = 0.5;
-      if (this.stateT > this.inspectDur) { this.inspecting = null; this.searchPoints = Math.min(this.searchPoints, 1); this.waitT = 0.8; }
+      if (this.stateT > this.inspectDur) { if (g.player.hidden === this.inspecting) bus.emit('inspectSurvived', this.inspecting); this.inspecting = null; this.searchPoints = Math.min(this.searchPoints, 1); this.waitT = 0.8; }
       return;
     }
     if (this.waitT > 0) { this.waitT -= dt; return; }
@@ -181,7 +193,7 @@ export class Listener {
       if (!this.follow(dt, SPEED.search * g.difficulty.speed)) return;
       this.moving = false;
       if (this.pendingInspect) {
-        this.inspecting = this.pendingInspect; this.pendingInspect = null; this.inspectDur = 4.5 + Math.random() * 1.5; this.stateT = 0;
+        this.inspecting = this.pendingInspect; this.pendingInspect = null; this.inspectDur = 4.5 + Math.random() * 1.5 + g.director.inspectBonus(this.inspecting); this.stateT = 0;
         g.audio.play('inhale', { pos: this.pos3(), occlusion: 1, gain: 0.9 }); g.caption('inhale', this.pos3()); bus.emit('inspectHide', this.inspecting);
         if (this.sawHide === this.inspecting) this.startChase();
         return;
@@ -193,7 +205,7 @@ export class Listener {
     // was drawn, only once per search, and the player can still survive by holding their breath.
     const ps = g.player.hidden;
     this.inspectedRecently = this.inspectedRecently || new Set();
-    if (ps && !this.inspectedRecently.has(ps.id) && ps.floor === this.f && Math.hypot(ps.hidePos.x - this.searchCenter.x, ps.hidePos.z - this.searchCenter.z) < 4.5 && Math.random() < g.difficulty.inspectChance) {
+    if (ps && !this.inspectedRecently.has(ps.id) && ps.floor === this.f && Math.hypot(ps.hidePos.x - this.searchCenter.x, ps.hidePos.z - this.searchCenter.z) < 4.5 && Math.random() < g.director.inspectChance(g.difficulty.inspectChance, ps)) {
       this.inspectedRecently.add(ps.id);
       this.goal = { f: ps.floor, x: ps.frontPos.x, z: ps.frontPos.z }; this.path = null; this.moving = true; this.pendingInspect = ps;
       return;

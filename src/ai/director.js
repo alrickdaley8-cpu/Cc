@@ -5,6 +5,9 @@
 import { bus } from '../core/events.js';
 import { clamp } from '../core/rng.js';
 
+const GLASS_WISE = 3; // bottle lures investigated before it starts tracing the throw
+const HABIT_WISE = 2; // inspections survived in one spot before it gets suspicious of that spot
+
 const LAIRS = [ // backstage entry/exit points, far corners of each floor
   { f: 2, x: 4.5, z: 2.5 }, { f: 2, x: 26.5, z: 2.5 }, { f: 2, x: 24.5, z: 19.5 }, { f: 2, x: 5.5, z: 16.5 },
   { f: 1, x: 4.5, z: 2.5 }, { f: 1, x: 26.5, z: 22.5 }, { f: 1, x: 26.5, z: 2.5 }, { f: 1, x: 4.5, z: 22.5 },
@@ -24,8 +27,37 @@ export class Director {
     this.history = [];    // pacing log for the gate test
     this.logT = 0;
     this.scripted = false;
+    this.resetLearning();
     bus.on('chaseStart', () => { this.intensity = Math.min(1, this.intensity + 0.35); });
+    // ---- it learns (Alien: Isolation-style behaviour unlocks, but driven by what *you* keep doing) ----
+    bus.on('bottleThrown', (from) => { this.lastThrow = { ...from, t: game.time }; });
+    bus.on('glassInvestigated', () => {
+      const n = ++this.learn.glass;
+      if (n === GLASS_WISE) this.announce('glass');
+    });
+    bus.on('inspectSurvived', (spot) => {
+      const n = (this.learn.spots[spot.id] || 0) + 1; this.learn.spots[spot.id] = n;
+      if (n === HABIT_WISE) this.announce('habit');
+    });
     bus.on('noise', (n) => { if (n.src === 'player' && n.loud >= 9) this.lastLoud = { ...n, t: game.time }; });
+  }
+
+  resetLearning() { this.learn = { glass: 0, spots: {}, told: {} }; this.lastThrow = null; }
+  glassWise() { return this.learn.glass >= GLASS_WISE; }
+  // habit: a spot you've survived an inspection in twice gets checked more often, and for longer
+  inspectChance(base, spot) { return (this.learn.spots[spot.id] || 0) >= HABIT_WISE ? Math.min(1, base + 0.25) : base; }
+  inspectBonus(spot) { return (this.learn.spots[spot.id] || 0) >= HABIT_WISE ? 0.75 : 0; } // measured: +1.5 s left 2% breath (unfair)
+  // where the bottle came from — blurred, never the exact tile
+  throwOrigin() {
+    const t = this.lastThrow; if (!t || this.game.time - t.t > 20) return null;
+    return this.roughArea({ floor: t.f, x: t.x, z: t.z }, 1, 3);
+  }
+  announce(kind) {
+    if (this.learn.told[kind]) return; this.learn.told[kind] = true;
+    // Telegraph every unlock once, so a new behaviour is never an unexplained "cheat".
+    const msg = { glass: '[it lingers over the broken glass… then turns toward where it was thrown from]', habit: '[it stays at the door longer than before. It remembers this place.]' }[kind];
+    this.game.ui.caption(msg, 5);
+    bus.emit('learned', kind);
   }
 
   start() { this.enabled = true; this.phase = 'relax'; this.phaseT = 0; this.relaxFor = 6; }
@@ -92,6 +124,7 @@ export class Director {
     this.phase = 'relax'; this.phaseT = 0;
     const d = this.game.difficulty;
     this.relaxFor = d.relaxMin + Math.random() * (d.relaxMax - d.relaxMin) - this.intensity * 6;
+    if (this.game.flags.cellar) this.relaxFor *= 0.8; // Act III: less breathing room
     this.intensity *= 0.5;
     this.sendAway();
   }

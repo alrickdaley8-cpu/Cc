@@ -15,7 +15,8 @@ export class Throwables {
     const g = this.game, p = g.player;
     const dir = p.forward();
     const mesh = new THREE.Mesh(this.geo, getMat('p_glass'));
-    mesh.position.copy(g.camera.position).addScaledVector(dir, 0.4);
+    // from the player's eye (not g.camera, which only syncs at render time — stale after a teleport)
+    mesh.position.set(p.x, p.ySmooth + p.eye, p.z).addScaledVector(dir, 0.4);
     g.scene.add(mesh);
     const v = dir.clone().multiplyScalar(9.5); v.y += 2.2;
     this.list.push({ mesh, v, f: p.floor, life: 4 });

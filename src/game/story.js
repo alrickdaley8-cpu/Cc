@@ -186,7 +186,7 @@ export class Story {
   }
   throwBottle() {
     if (this.inv.bottles <= 0 || this.game.player.hidden) return false;
-    this.inv.bottles--; this.game.throwables.throw();
+    this.inv.bottles--; this.game.throwables.throw(); bus.emit('bottleThrown', { f: this.game.player.floor, x: this.game.player.x, z: this.game.player.z });
     return true;
   }
   playCylinders(pos, floor) {
