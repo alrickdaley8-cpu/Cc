@@ -92,3 +92,13 @@ button.small { font-size: 14px; color: #8b8371; }
 .jfoot { margin-top: 22px; font-size: 12px; color: #6f6858; }
 
 .death .tip { font-style: normal; font-size: 14px; color: #a99; max-width: 520px; margin: 4px auto 22px; line-height: 1.5; letter-spacing: .02em; }
+
+/* brightness calibration: the scene must stay visible, so no full backdrop */
+.screen.calibscreen { background: none; align-items: flex-end; }
+.calib { background: rgba(6,4,4,.82); border-top: 1px solid #3a2a24; width: 100%; padding: 10px 24px 12px; text-align: center; color: #cbb; }
+.calib h2 { font-size: 18px; margin: 0 0 4px; letter-spacing: .3em; font-weight: 300; }
+.calib p { margin: 0 auto 8px; max-width: 680px; line-height: 1.4; font-size: 13px; }
+.calib button { margin: 0 0 0 18px; vertical-align: middle; }
+.calib input[type=range] { width: min(420px, 70vw); vertical-align: middle; }
+.calib output { display: inline-block; width: 3em; margin-left: 8px; }
+.calib .small { font-size: 11px; opacity: .6; margin-top: 6px; }

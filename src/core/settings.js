@@ -6,6 +6,7 @@ export const DEFAULTS = {
   fov: 72,
   headBob: true,
   brightness: 1.0,
+  calibrated: false,
   grain: true,
   aberration: true,
   reduceFlashing: false,

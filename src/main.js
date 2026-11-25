@@ -388,6 +388,12 @@ class Game {
       this.renderer.shadowMap.needsUpdate = true;
     }
     this.updateLights(dt);
+    // Dark adaptation: torch off → over ~3 s your eyes adjust and the moonlit ambient rises (cool, rod-vision tint);
+    // torch on → gone almost at once. Makes torch-off stealth playable without making the torch pointless.
+    const dark = !this.player.torchOn || this.player.torchIntensity < 0.15;
+    this.adapt = damp(this.adapt || 0, dark ? 1 : 0, dark ? 0.45 : 6, dt);
+    this.ambient.intensity = 0.5 + this.adapt * 2.6;
+    this.ambient.color.setRGB(0.227 + this.adapt * 0.05, 0.275 + this.adapt * 0.08, 0.376 + this.adapt * 0.16);
     // fade / flash / fear into the post pass
     this.fade = damp(this.fade, this.fadeTarget, this.fadeTarget > this.fade ? 2.2 : 1.4, dt);
     this.flash = Math.max(0, this.flash - dt * 2.5);

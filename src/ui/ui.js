@@ -133,8 +133,22 @@ export class UI {
         <button data-d="standard"><b>Standard</b><span>The intended experience.</span></button>
         <button data-d="nightmare"><b>Nightmare</b><span>Keen ears, longer hunts, a weak torch.</span></button>
       </div><button id="b-back">Back</button></div>`);
-    this.screen.querySelectorAll('[data-d]').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); settings.difficulty = b.dataset.d; saveSettings(); this.game.newGame(); }; });
+    this.screen.querySelectorAll('[data-d]').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); settings.difficulty = b.dataset.d; saveSettings(); if (settings.calibrated) this.game.newGame(); else this.calibrate(() => this.game.newGame()); }; });
     this.bind('#b-back', () => this.game.showTitle());
+  }
+  // First-launch brightness calibration, done on the live scene (same post pipeline as the game):
+  // the title backdrop looks down the hall at the family portrait.
+  calibrate(done) {
+    // torch off: the target must be near-black (a lit object is visible at any setting and calibrates nothing)
+    const g = this.game, P = g.player, torch = P.torchOn; g.fadeTarget = 0; g.fade = Math.min(g.fade, 0.2); P.torchOn = false;
+    this.showScreen(`<div class="calib"><h2>Brightness</h2>
+      <p>Your torch is off. Raise the brightness until you can <b>just</b> make out the doorway and the walls of the hall ahead — then stop.</p>
+      <input type="range" id="calib-b" min="0.6" max="1.8" step="0.05" value="${settings.brightness}"><output id="calib-o">${(+settings.brightness).toFixed(2)}</output>
+      <button id="b-calib">That's right</button><div class="small">The house is meant to be dark. You can change this later in Settings.</div></div>`, 'calibscreen');
+    const r = this.screen.querySelector('#calib-b'), o = this.screen.querySelector('#calib-o');
+    r.oninput = () => { settings.brightness = +r.value; o.textContent = (+r.value).toFixed(2); g.applySettings(); };
+    r.onclick = (e) => e.stopPropagation();
+    this.bind('#b-calib', () => { P.torchOn = torch; settings.calibrated = true; saveSettings(); done(); });
   }
   controls(back) {
     this.showScreen(`<div class="panel"><h2>How to play</h2>
