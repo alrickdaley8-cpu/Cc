@@ -5,6 +5,7 @@ import { buildLevel } from './world/levelBuilder.js';
 import { buildProps } from './world/props.js';
 import { FLOORS, STAIRS } from './world/levelData.js';
 import { PostFX } from './render/post.js';
+import { getMat } from './world/materials.js';
 import { Input } from './core/input.js';
 import { bus } from './core/events.js';
 import { settings, loadSettings } from './core/settings.js';
@@ -98,6 +99,7 @@ class Game {
     });
     this.applySettings();
     this.resize();
+    this.prewarm();
     this.lightningT = 12;
     this.last = performance.now();
     this.showTitle();
@@ -329,9 +331,9 @@ class Game {
     const t = this.time;
     for (let i = 0; i < LIGHT_POOL; i++) {
       const pl = this.lightPool[i], c = cands[i];
-      if (!c) { pl.intensity = 0; pl.visible = false; continue; }
+      // never toggle .visible: a changing light count makes three.js recompile every material (1.4 s stall entering the cellar)
+      if (!c) { pl.intensity = 0; continue; }
       const l = c[1];
-      pl.visible = true;
       pl.position.copy(l.pos); pl.color.setHex(l.color); pl.distance = l.distance;
       let k = 1;
       if (l.flicker) k *= 0.85 + 0.1 * Math.sin(t * 9.1 + i) + 0.05 * Math.sin(t * 23.7);
@@ -357,6 +359,22 @@ class Game {
       if (onIt || (near && this._frustum.intersectsBox(this._stairBoxes[i]))) { s.add(st.low); s.add(st.high); }
     });
     return s;
+  }
+  // Compile every shader program up front (all floors + the Listener + a bottle), so the first
+  // look into the cellar or the first sight of the Listener doesn't stall for 0.5–1.5 s.
+  prewarm() {
+    if (!this.renderer) return;
+    const t0 = performance.now();
+    const vis = [...this.levelGroups, ...this.props.floorGroups].map((g) => g.visible);
+    [...this.levelGroups, ...this.props.floorGroups].forEach((g) => { g.visible = true; });
+    const lv = this.listener.rig.root.visible; this.listener.rig.root.visible = true;
+    const bottle = new THREE.Mesh(this.throwables.geo, getMat('p_glass')); this.scene.add(bottle);
+    this.renderer.compile(this.scene, this.camera);
+    this.post.render(this.scene, this.camera); // also builds the render targets and post shader
+    this.scene.remove(bottle);
+    [...this.levelGroups, ...this.props.floorGroups].forEach((g, i) => { g.visible = vis[i]; });
+    this.listener.rig.root.visible = lv;
+    this.perf.prewarmMs = Math.round(performance.now() - t0);
   }
   render(dt) {
     if (!this.renderer) return;
