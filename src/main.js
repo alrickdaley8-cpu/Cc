@@ -166,14 +166,15 @@ class Game {
     const fwd = new THREE.Vector3(Math.sin(listener.yaw), 0, Math.cos(listener.yaw));
     const toP = new THREE.Vector3(p.x - listener.x, 0, p.z - listener.z).normalize();
     if (toP.lengthSq() > 0) fwd.copy(toP);
-    listener.x = p.x - fwd.x * 0.75; listener.z = p.z - fwd.z * 0.75;
+    listener.x = p.x - fwd.x * 1.9; listener.z = p.z - fwd.z * 1.9; // stooped: the horn mouth ends ~0.45 m from your face
     listener.yaw = Math.atan2(fwd.x, fwd.z);
     listener.rig.root.visible = true;
     const yawToL = Math.atan2(-(listener.x - p.x), -(listener.z - p.z));
-    p.lookOverride = { yaw: yawToL, pitch: 0.42, t: 0, dur: 3, speed: 14 };
+    p.lookOverride = { yaw: yawToL, pitch: 0.36, t: 0, dur: 3, speed: 16 };
     this.audio.play('shriek', { pos: new THREE.Vector3(listener.x, p.y + 2, listener.z) });
     this.audio.play('death');
     this.flash = settings.reduceFlashing ? 0.3 : 1;
+    if (!settings.reduceFlashing) this.forceFlicker = 0.6; // the dynamo stutters as it leans in
     bus.emit('caught', { hidden: !!spot });
     setTimeout(() => { this.fadeTarget = 1; }, this.bot ? 10 : 1500);
     setTimeout(() => { this.input.exitLock(); this.ui.death(); }, this.bot ? 50 : 2700);

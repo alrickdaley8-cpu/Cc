@@ -23,6 +23,8 @@ export const VIEWS = [
   { name: 'lab_power', f: 0, x: 11.5, z: 16.0, yaw: 3.6, pitch: -0.1, power: true },
   { name: 'chamber', f: 0, x: 19.6, z: 18.5, yaw: -1.57, pitch: -0.05, power: true },
   { name: 'listener', f: 1, x: 15.5, z: 16.5, yaw: 0, pitch: 0.15, listener: { f: 1, x: 15.5, z: 13.0 } },
+  { name: 'listener_close', f: 1, x: 15.5, z: 15.0, yaw: 0, pitch: 0.3, listener: { f: 1, x: 15.4, z: 13.4, yaw: 0, state: 'scripted' } },
+  { name: 'stairs_up', f: 1, x: 14.9, z: 11.5, yaw: 0, pitch: 0.25 },
 ];
 
 const b = await launch({ width: 960, height: 540 });
@@ -41,7 +43,7 @@ for (const v of VIEWS) {
     g.setPower(!!v.power); g.flags.power = !!v.power;
     g.teleport(v.f, v.x, v.z, v.yaw); g.player.pitch = v.pitch; g.player.torchOn = true; g.player.battery = 1;
     const L = g.listener;
-    if (v.listener) { L.placeAt(v.listener.f, v.listener.x, v.listener.z, Math.PI); L.setState('patrol'); L.goal = null; L.listenT = 3; }
+    if (v.listener) { L.placeAt(v.listener.f, v.listener.x, v.listener.z, v.listener.yaw ?? Math.PI); L.setState(v.listener.state || 'patrol'); L.goal = null; L.listenT = 3; }
     else { L.toBackstage(); }
     g.fade = 0; g.fadeTarget = 0;
   }, v);

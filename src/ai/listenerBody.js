@@ -8,11 +8,11 @@ import { compact } from '../world/props.js';
 
 export function buildListenerBody() {
   const root = new THREE.Group(); root.name = 'listener';
-  const skin = new THREE.MeshStandardMaterial({ color: 0x6f6a60, roughness: 0.75, metalness: 0 });
+  const skin = new THREE.MeshStandardMaterial({ color: 0x3a3430, roughness: 0.55, metalness: 0 }); // waxy, grey-brown
   const coatTex = T.fabric('#141214', 909);
-  const coat = new THREE.MeshStandardMaterial({ map: coatTex, color: 0x9a9090, roughness: 1, side: THREE.DoubleSide });
-  const brass = getMat('p_brass');
-  const inner = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide });
+  const coat = new THREE.MeshStandardMaterial({ map: coatTex, color: 0x5a5250, roughness: 1, side: THREE.DoubleSide });
+  const brass = new THREE.MeshStandardMaterial({ color: 0x9a7432, roughness: 0.38, metalness: 0.75, emissive: 0x120a02 }); // dented gramophone brass
+  const inner = new THREE.MeshStandardMaterial({ color: 0x3a2810, roughness: 0.55, metalness: 0.7, side: THREE.DoubleSide }); // tarnished bell interior (DoubleSide: lathe winding faces inward)
 
   const hips = new THREE.Group(); hips.position.y = 1.05; root.add(hips);
   const torso = new THREE.Group(); hips.add(torso);
@@ -58,7 +58,7 @@ export function buildListenerBody() {
   const arms = [];
   for (const s of [-1, 1]) {
     const sh = new THREE.Group(); sh.position.set(s * 0.22, 0.92, 0.02); torso.add(sh);
-    const up = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.025, 0.6, 6), skin); up.position.y = -0.3; sh.add(up);
+    const up = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.019, 0.6, 6), skin); up.position.y = -0.3; sh.add(up);
     const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.5, 8, 1, true), coat); sleeve.position.y = -0.24; sh.add(sleeve);
     const el = new THREE.Group(); el.position.y = -0.6; sh.add(el);
     const lo = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.018, 0.66, 6), skin); lo.position.y = -0.33; el.add(lo);
@@ -73,9 +73,9 @@ export function buildListenerBody() {
   const legs = [];
   for (const s of [-1, 1]) {
     const th = new THREE.Group(); th.position.set(s * 0.1, 0, 0); hips.add(th);
-    const tm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 0.55, 6), skin); tm.position.y = -0.27; th.add(tm);
+    const tm = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.022, 0.55, 6), skin); tm.position.y = -0.27; th.add(tm);
     const kn = new THREE.Group(); kn.position.y = -0.55; th.add(kn);
-    const sm = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.02, 0.5, 6), skin); sm.position.y = -0.25; kn.add(sm);
+    const sm = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.015, 0.5, 6), skin); sm.position.y = -0.25; kn.add(sm);
     const foot = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.24), skin); foot.position.set(0, -0.5, 0.07); kn.add(foot);
     legs.push({ th, kn, s });
   }
@@ -92,7 +92,7 @@ export function animateListener(rig, dt, { speed = 0, mode = 'walk', lookYaw = 0
   const moving = Math.min(1, speed / 1.2);
   const chase = mode === 'chase' ? 1 : 0;
   rig.armsUp = damp(rig.armsUp, chase ? 1 : mode === 'kill' ? 1.4 : 0, 4, dt);
-  rig.stoop = damp(rig.stoop, mode === 'listen' ? 0.45 : chase ? 0.5 : 0.28, 3, dt);
+  rig.stoop = damp(rig.stoop, mode === 'kill' ? 0.62 : mode === 'listen' ? 0.45 : chase ? 0.5 : 0.28, mode === 'kill' ? 9 : 3, dt);
   rig.hips.position.y = 1.05 + Math.abs(Math.sin(w)) * 0.05 * moving - (mode === 'listen' ? 0.06 : 0);
   rig.torso.rotation.x = rig.stoop + Math.sin(w * 2) * 0.03 * moving;
   rig.torso.rotation.z = Math.sin(w) * 0.06 * moving;

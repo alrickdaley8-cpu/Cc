@@ -100,6 +100,22 @@ await test('real keyboard movement, wall collision, foyer trigger slams the door
   return r;
 });
 
+await test('audio engine: context starts on gesture and every procedural sound synthesizes', async (p) => {
+  await p.mouse.click(480, 270); // user gesture → AudioContext allowed
+  const r = await run(p, `
+    g.audio.init();
+    const a = g.audio, pos = new (g.camera.position.constructor)(15, 1.5, 18);
+    const names = Object.getOwnPropertyNames(Object.getPrototypeOf(a)).filter((n) => n.startsWith('s_')).map((n) => n.slice(2));
+    const failed = [];
+    for (const n of names) { try { a.play(n, { pos, text: 'hello there friend', surface: 'wood' }); } catch (e) { failed.push(n + ': ' + e.message); } }
+    for (const surface of ['wood', 'wood_dark', 'tile_check', 'concrete', 'stone', 'grate']) a.play('footstep', { surface, creak: true, puddle: true });
+    toCellarKey(); sim(5);   // exercises per-frame update with the Listener hum active
+    return { ready: a.ready, state: a.ctx && a.ctx.state, sounds: names.length, failed, rate: a.ctx.sampleRate };`);
+  assert(r.ready, 'audio not ready');
+  assert(r.failed.length === 0, 'sounds failed: ' + r.failed.join('; '));
+  return r;
+});
+
 await test('Act I: clock strikes 13 → study key → journal → music box wakes the Listener', async (p) => {
   const r = await run(p, `toCellarKey(); return { keys: [...S.inv.keys], obj: S.objective, awake: !!S.flags.listenerAwake, Lstate: L.state, cyl: S.inv.cylinders.size, cp: S.checkpoint.name };`);
   assert(r.keys.includes('study_key') && r.keys.includes('cellar_key'), 'keys ' + r.keys);
@@ -146,9 +162,9 @@ await test('Hiding: unseen + held breath → Listener searches nearby and leaves
     L.placeAt(2, 15.0, 3.0, 0); L.investigate({ f: 2, x: 20.0, z: 7.5 }, true);
     const states = new Set(); let held = false, minD = 99;
     for (let i = 0; i < 160 && g.mode === 'playing'; i++) {
-      // a sensible player: hold breath only while it is close, breathe when it moves off
+      // play by Clara's rule 5: hold your breath when it STOPS OUTSIDE (it inhales, then stands at the doors)
       const d = Math.hypot(L.x - g.player.x, L.z - g.player.z); minD = Math.min(minD, d);
-      const want = d < 3.5 && g.player.breath > 0.05;
+      const want = (!!L.inspecting || d < 1.6) && g.player.breath > 0.05;
       if (want !== held) { g.input.simKey('Space', want); held = want; }
       g.simulate(0.25); states.add(L.state);
     }

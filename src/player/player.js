@@ -12,6 +12,7 @@ export const NOISE = {
 };
 const RADIUS = 0.27;
 
+const _tmpV = new THREE.Vector3();
 export class Player {
   constructor(game) {
     this.game = game;
@@ -212,7 +213,7 @@ export class Player {
       this.breathHeld = true; this.breath -= dt / 9.0;
       if (this.breath <= 0) { this.breath = 0; this.breathHeld = false; this.gasping = true; this.emitNoise(NOISE.gasp, 'gasp'); bus.emit('sfx', { name: 'gasp' }); }
     } else {
-      if (this.breathHeld) bus.emit('sfx', { name: 'exhale' });
+      if (this.breathHeld) { bus.emit('sfx', { name: 'exhale' }); this.breathEmitT = 0.7; } // grace: first audible breath ~1.5 s after letting go
       this.breathHeld = false; this.breath = Math.min(1, this.breath + dt / 5.0);
       if (this.gasping && this.breath > 0.35) this.gasping = false;
     }
@@ -244,8 +245,11 @@ export class Player {
     const level = this.torchOn ? (0.25 + 0.75 * clamp(this.battery * 4, 0, 1)) : 0;
     const target = level * flick * (this.cranking ? 1.08 : 1);
     this.torchIntensity = damp(this.torchIntensity, target, 30, dt);
-    this.spot.intensity = this.torchIntensity * 34;
-    this.fill.intensity = this.torchIntensity * 0.7;
+    // close-range falloff: a hand torch pressed against a wall (or a face) shouldn't blow out to white
+    // (scale by (d/2.2)^1.3 inside 2.2 m — slightly under the 1.6 decay, so close things still get brighter, just not blown out: crude eye adaptation)
+    const nearK = clamp(Math.pow((this.beamNear ?? 3) / 2.2, 1.3), 0.18, 1);
+    this.spot.intensity = this.torchIntensity * 34 * nearK;
+    this.fill.intensity = this.torchIntensity * 0.7 * Math.sqrt(nearK);
   }
 
   updateCamera(dt) {
@@ -269,10 +273,19 @@ export class Player {
     const dir = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(this.beamPitch, this.beamYaw, 0, 'YXZ'));
     this.spotTarget.position.copy(this.spot.position).addScaledVector(dir, 5);
     this.spotTarget.updateMatrixWorld();
-    // bounce fill sits ~1.2m along the beam (or at the wall it hits)
+    // nearest thing in the beam: wall, floor (aiming down), or the Listener's head if it is in the cone
     const hit = this.world.raycast(this.floor, this.spot.position.x, this.spot.position.z, dir.x, dir.z, 3.5);
-    this.fill.position.copy(this.spot.position).addScaledVector(dir, Math.max(0.3, Math.min(hit - 0.5, 3.0)));
+    let near = hit;
+    if (dir.y < -0.08) near = Math.min(near, (this.spot.position.y - this.ySmooth) / -dir.y);
+    const L = this.game.listener;
+    if (L && L.rig && L.rig.root.visible && L.f === this.floor) {
+      const hp = L.rig.head.getWorldPosition(_tmpV).sub(this.spot.position), ld = hp.length();
+      if (ld > 0.01 && hp.dot(dir) / ld > 0.8) near = Math.min(near, Math.max(0, ld - 0.55)); // horn mouth is ~0.5 m in front of the head pivot
+    }
+    // bounce fill sits just short of whatever the beam hits (never inside the Listener)
+    this.fill.position.copy(this.spot.position).addScaledVector(dir, Math.max(0.12, Math.min(near - 0.5, 3.0)));
     this.fill.position.y = Math.min(this.fill.position.y, this.ySmooth + 1.2);
+    this.beamNear = near;
   }
 
   forward() { return new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ')); }
