@@ -1,0 +1,24 @@
+{
+  "name": "the-quiet-at-marlowe-house",
+  "version": "1.0.0",
+  "private": true,
+  "description": "An original first-person horror game about sound, silence and the thing that listens. Built with Three.js and the Web Audio API.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "test": "node --test tests/unit/*.test.js",
+    "test:e2e": "node tests/e2e/run.mjs",
+    "test:all": "npm run test && npm run build && npm run test:e2e"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@sparticuz/chromium": "^158.0.0",
+    "puppeteer-core": "^25.18.1",
+    "vite": "^8.3.8"
+  }
+}
